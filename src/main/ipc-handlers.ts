@@ -14,6 +14,32 @@ import { registerAdkAgent, runAdkAgent, getAdkStatus, isAdkReady } from './adk-b
 import { TOOL_DEFINITIONS, executeToolCall } from './tools'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
+  // Prevent double registration when multiple windows are created
+  if ((registerIpcHandlers as any)._registered) return
+  ;(registerIpcHandlers as any)._registered = true
+
+  // List of channels so we can remove them when the window closes
+  const CHANNELS = [
+    'settings:get',
+    'settings:set',
+    'settings:set-many',
+    'agents:list',
+    'agents:get',
+    'agents:create',
+    'agents:update',
+    'agents:delete',
+    'conversations:list',
+    'conversations:create',
+    'conversations:update-title',
+    'conversations:delete',
+    'messages:list',
+    'chat:send',
+    'models:list-ollama',
+    'models:list-litellm',
+    'adk:status',
+    'adk:sync-agents',
+  ]
+
   // ─── Settings ─────────────────────────────────────────────────────────────
 
   ipcMain.handle('settings:get', () => db.getSettings())
@@ -300,6 +326,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   // ─── Emit window events (called from main index) ──────────────────────────
   mainWindow.on('close', () => {
-    ipcMain.removeAllListeners()
+    for (const ch of CHANNELS) {
+      try {
+        ipcMain.removeHandler(ch)
+      } catch (e) {
+        // ignore
+      }
+    }
+    ;(registerIpcHandlers as any)._registered = false
   })
 }

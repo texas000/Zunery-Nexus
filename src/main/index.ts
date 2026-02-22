@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc-handlers'
@@ -8,6 +8,10 @@ import { getSettings } from './database'
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const iconPath = process.platform === 'darwin'
+    ? undefined
+    : (is.dev ? join(process.cwd(), 'build/icons/icon.png') : join(__dirname, '../build/icons/icon.png'))
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -17,6 +21,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#09090b',
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -50,6 +55,17 @@ app.whenReady().then(async () => {
   })
 
   createWindow()
+
+  // Ensure macOS Dock shows the custom icon during dev and in production
+  if (process.platform === 'darwin') {
+    try {
+      const dockIconPath = is.dev ? join(process.cwd(), 'build/icons/icon.png') : join(__dirname, '../build/icons/icon.png')
+      const dockImg = nativeImage.createFromPath(dockIconPath)
+      if (!dockImg.isEmpty()) app.dock.setIcon(dockImg)
+    } catch (e) {
+      console.warn('[Main] failed to set dock icon', e)
+    }
+  }
 
   // Start ADK server in background
   const settings = getSettings()
