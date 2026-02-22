@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ExpandAI - Google ADK Agent Server
+Zunery Nexus - Google ADK Agent Server
 Provides HTTP API to create and run ADK agents.
 Communicates status via stdout (Electron IPC bridge).
 """
@@ -139,7 +139,7 @@ async def run_agent_async(agent_config: dict, session_id: str, message: str, his
             return run_agent_fallback(agent_config, message)
         agent_config["_adk_instance"] = adk_agent
 
-    app_name = f"expandai_{agent_config['id'][:8]}"
+    app_name = f"zunery_nexus_{agent_config['id'][:8]}"
 
     try:
         runner = Runner(
@@ -305,7 +305,7 @@ class AdkHandler(BaseHTTPRequestHandler):
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ExpandAI ADK Server")
+    parser = argparse.ArgumentParser(description="Zunery Nexus ADK Server")
     parser.add_argument("--port", type=int, default=7891)
     args = parser.parse_args()
 

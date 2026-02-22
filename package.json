@@ -1,7 +1,7 @@
 {
-  "name": "expand-ai",
+  "name": "zunery-nexus",
   "version": "1.0.0",
-  "description": "ExpandAI - Desktop AI Agent Platform with Ollama, LiteLLM & Google ADK",
+  "description": "Zunery Nexus - Desktop AI Agent Platform with Ollama, LiteLLM & Google ADK",
   "main": "./out/main/index.js",
   "author": "",
   "homepage": ".",
@@ -54,5 +54,32 @@
     "tailwindcss": "^4.2.0",
     "typescript": "^5.5.2",
     "vite": "^5.3.1"
+  }
+  ,"build": {
+    "appId": "com.zunery.nexus",
+    "productName": "Zunery Nexus",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "src/**",
+      "package.json",
+      "resources/**"
+    ],
+    "mac": {
+      "target": ["dmg","zip"],
+      "category": "public.app-category.utilities",
+      "icon": "build/icons/icon.icns"
+    },
+    "win": {
+      "target": ["nsis","zip"],
+      "icon": "build/icons/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage","deb"],
+      "icon": "build/icons"
+    }
   }
 }

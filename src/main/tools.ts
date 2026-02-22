@@ -91,7 +91,7 @@ async function duckDuckGoSearch(query: string): Promise<string> {
     const ia = await axios.get('https://api.duckduckgo.com/', {
       params: { q: query, format: 'json', no_redirect: 1, no_html: 1, skip_disambig: 1 },
       timeout: 8000,
-      headers: { 'User-Agent': 'ExpandAI/1.0' },
+      headers: { 'User-Agent': 'ZuneryNexus/1.0' },
     })
     const d = ia.data
 

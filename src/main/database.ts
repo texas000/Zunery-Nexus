@@ -8,7 +8,7 @@ if (!existsSync(userDataPath)) {
   mkdirSync(userDataPath, { recursive: true })
 }
 
-const dbPath = join(userDataPath, 'expandai.db')
+const dbPath = join(userDataPath, 'zunery_nexus.db')
 const db = new Database(dbPath)
 
 db.pragma('journal_mode = WAL')

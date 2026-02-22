@@ -119,12 +119,12 @@ export function Sidebar() {
   return (
     <aside className="flex flex-col h-full w-64 bg-zinc-950 border-r border-zinc-800/60 select-none shrink-0">
       {/* Titlebar drag region + logo */}
-      <div className="drag-region h-12 flex items-center px-4 border-b border-zinc-800/60 shrink-0 mt-5">
+      <div className="drag-region h-12 flex items-center px-4 border-b border-zinc-800/60 shrink-0 mt-6.5">
         <div className="no-drag flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
             <Bot size={14} className="text-white" />
           </div>
-          <span className="font-semibold text-sm text-zinc-100">Agent Manager</span>
+          <span className="font-semibold text-sm text-zinc-100">Zunery Nexus</span>
         </div>
 
         {/* ADK status */}

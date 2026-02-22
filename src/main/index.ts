@@ -43,7 +43,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.expandai.desktop')
+  electronApp.setAppUserModelId('com.zunery.nexus')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
