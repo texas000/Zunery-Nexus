@@ -81,60 +81,158 @@ export async function executeToolCall(name: string, args: Record<string, unknown
   }
 }
 
-// ─── Chromium browser management ──────────────────────────────────────────────
+// ─── Browser management ────────────────────────────────────────────────────────
 
 let _browser: Browser | null = null
 
-function findChromiumPath(): string | undefined {
-  const home = process.env.HOME || process.env.USERPROFILE || '/root'
-  const cacheDir = join(home, '.cache', 'ms-playwright')
+/**
+ * Scan the Playwright browser cache for any usable Chromium executable.
+ * Handles Windows (%LOCALAPPDATA%), macOS (~/Library/Caches), and Linux (~/.cache).
+ * Tries every chromium-* subdirectory newest-first so we pick up the latest revision.
+ */
+function findChromiumInCache(): string | undefined {
+  const cacheDirs: string[] = []
 
-  if (existsSync(cacheDir)) {
-    try {
-      const dirs = readdirSync(cacheDir).sort().reverse()
-      for (const dir of dirs) {
-        if (!dir.startsWith('chromium')) continue
-        const candidates = [
-          join(cacheDir, dir, 'chrome-headless-shell-linux64', 'chrome-headless-shell'),
-          join(cacheDir, dir, 'chrome-linux', 'chrome'),
-          join(cacheDir, dir, 'chrome-linux64', 'chrome'),
-          join(cacheDir, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
-          join(cacheDir, dir, 'chrome-win', 'chrome.exe'),
-        ]
-        for (const p of candidates) if (existsSync(p)) return p
-      }
-    } catch { /* continue */ }
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA
+    if (local) cacheDirs.push(join(local, 'ms-playwright'))
+  } else if (process.platform === 'darwin') {
+    const home = process.env.HOME || ''
+    cacheDirs.push(join(home, 'Library', 'Caches', 'ms-playwright'))
+    cacheDirs.push(join(home, '.cache', 'ms-playwright'))
+  } else {
+    const home = process.env.HOME || '/root'
+    cacheDirs.push(join(home, '.cache', 'ms-playwright'))
   }
 
-  // Try system-installed Chrome / Chromium
-  for (const cmd of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
-    try {
-      const p = execSync(`which ${cmd} 2>/dev/null`, { stdio: ['ignore', 'pipe', 'ignore'] })
-        .toString()
-        .trim()
-      if (p && existsSync(p)) return p
-    } catch { /* continue */ }
-  }
+  for (const cacheDir of cacheDirs) {
+    if (!existsSync(cacheDir)) continue
+    let dirs: string[]
+    try { dirs = readdirSync(cacheDir).sort().reverse() } catch { continue }
 
+    for (const dir of dirs) {
+      if (!dir.startsWith('chromium')) continue
+
+      const candidates =
+        process.platform === 'win32'
+          ? [
+              join(cacheDir, dir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'),
+              join(cacheDir, dir, 'chrome-win64', 'chrome.exe'),
+              join(cacheDir, dir, 'chrome-win', 'chrome.exe'),
+            ]
+          : process.platform === 'darwin'
+          ? [
+              join(cacheDir, dir, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'),
+              join(cacheDir, dir, 'chrome-headless-shell-mac_arm64', 'chrome-headless-shell'),
+              join(cacheDir, dir, 'chrome-headless-shell-mac-x64', 'chrome-headless-shell'),
+              join(cacheDir, dir, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+              join(cacheDir, dir, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+              join(cacheDir, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+            ]
+          : [
+              join(cacheDir, dir, 'chrome-headless-shell-linux64', 'chrome-headless-shell'),
+              join(cacheDir, dir, 'chrome-linux', 'chrome'),
+              join(cacheDir, dir, 'chrome-linux64', 'chrome'),
+            ]
+
+      for (const p of candidates) if (existsSync(p)) return p
+    }
+  }
   return undefined
 }
 
+/**
+ * Find a system-installed Chrome/Chromium executable.
+ */
+function findSystemChrome(): string | undefined {
+  if (process.platform === 'win32') {
+    const roots = [
+      process.env.PROGRAMFILES,
+      process.env['PROGRAMFILES(X86)'],
+      process.env.LOCALAPPDATA,
+    ].filter(Boolean) as string[]
+    for (const root of roots) {
+      const p = join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')
+      if (existsSync(p)) return p
+    }
+    return undefined
+  }
+
+  if (process.platform === 'darwin') {
+    const macPaths = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+    ]
+    for (const p of macPaths) if (existsSync(p)) return p
+    return undefined
+  }
+
+  // Linux — scan PATH
+  for (const cmd of ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser']) {
+    try {
+      const p = execSync(`which ${cmd} 2>/dev/null`, { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString().trim()
+      if (p && existsSync(p)) return p
+    } catch { /* continue */ }
+  }
+  return undefined
+}
+
+// Extra flags needed in sandboxed / containerised Linux environments
+const LINUX_SANDBOX_ARGS = process.platform === 'linux'
+  ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  : []
+
 async function getBrowser(): Promise<Browser> {
   if (_browser?.isConnected()) return _browser
-  const executablePath = findChromiumPath()
-  console.log('[TOOLS] launching browser', { executablePath: executablePath ?? '(playwright default)' })
-  _browser = await chromium.launch({
-    headless: true,
-    executablePath,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-blink-features=AutomationControlled',
-    ],
-  })
-  _browser.on('disconnected', () => { _browser = null })
-  return _browser
+
+  const onDisconnect = () => { _browser = null }
+
+  // Strategy 1 — channel:'chrome' uses whatever Chrome the OS has installed.
+  //   Works on Windows, macOS, and Linux where Chrome is available without any
+  //   Playwright browser download.
+  try {
+    _browser = await chromium.launch({
+      channel: 'chrome',
+      headless: true,
+      args: LINUX_SANDBOX_ARGS,
+    })
+    _browser.on('disconnected', onDisconnect)
+    console.log('[TOOLS] browser: system Chrome (channel:chrome)')
+    return _browser
+  } catch { /* Chrome not installed, continue */ }
+
+  // Strategy 2 — look for any Chromium in the Playwright cache that exists,
+  //   regardless of version. Even an older revision works fine for web search.
+  const cachedPath = findChromiumInCache()
+  if (cachedPath) {
+    _browser = await chromium.launch({
+      headless: true,
+      executablePath: cachedPath,
+      args: LINUX_SANDBOX_ARGS,
+    })
+    _browser.on('disconnected', onDisconnect)
+    console.log('[TOOLS] browser: Playwright cache', cachedPath)
+    return _browser
+  }
+
+  // Strategy 3 — system-installed Chromium (Linux/Mac PATH, Windows well-known paths)
+  const systemPath = findSystemChrome()
+  if (systemPath) {
+    _browser = await chromium.launch({
+      headless: true,
+      executablePath: systemPath,
+      args: LINUX_SANDBOX_ARGS,
+    })
+    _browser.on('disconnected', onDisconnect)
+    console.log('[TOOLS] browser: system path', systemPath)
+    return _browser
+  }
+
+  throw new Error(
+    'No Chromium browser found. Install Google Chrome or run: npx playwright install chromium'
+  )
 }
 
 // ─── Google Search ─────────────────────────────────────────────────────────────
@@ -155,14 +253,11 @@ async function googleSearch(query: string): Promise<string> {
   try {
     const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en&gl=us&num=10`
     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 })
-
-    // Wait for either the results container or a known result element
     await page.waitForSelector('#rso, #search', { timeout: 12000 }).catch(() => {})
 
     const results = await page.evaluate(() => {
       const items: Array<{ title: string; url: string; snippet: string }> = []
 
-      // Walk all result blocks — use multiple selector strategies for robustness
       const blocks = Array.from(
         document.querySelectorAll('#rso .g, #rso > div > div, [data-sokoban-container], [data-hveid]')
       )
@@ -174,7 +269,6 @@ async function googleSearch(query: string): Promise<string> {
         const title = h3.textContent?.trim() ?? ''
         if (!title) continue
 
-        // URL: walk up from h3 to the nearest <a>
         const anchor =
           (h3.closest('a') as HTMLAnchorElement | null) ??
           (block.querySelector('a[href^="http"], a[href^="/url"]') as HTMLAnchorElement | null)
@@ -182,15 +276,11 @@ async function googleSearch(query: string): Promise<string> {
 
         // Unwrap Google redirect URLs (/url?q=...)
         if (href.includes('/url?')) {
-          try {
-            href = new URL(href).searchParams.get('q') ?? href
-          } catch { /* keep raw */ }
+          try { href = new URL(href).searchParams.get('q') ?? href } catch { /* keep raw */ }
         }
 
-        // Skip Google-internal links
         if (!href || href.includes('google.com') || href.startsWith('#')) continue
 
-        // Snippet: try several known class/attribute patterns Google uses
         const snippetEl = block.querySelector(
           '[data-sncf="1"], .VwiC3b, .lEBKkf, [class*="r025kc"], [class*="s3v9rd"], .st'
         )
@@ -208,10 +298,8 @@ async function googleSearch(query: string): Promise<string> {
     }
 
     const lines = results.map(
-      (r, i) =>
-        `[${i + 1}] ${r.title}\n    ${r.url}${r.snippet ? `\n    ${r.snippet}` : ''}`
+      (r, i) => `[${i + 1}] ${r.title}\n    ${r.url}${r.snippet ? `\n    ${r.snippet}` : ''}`
     )
-
     return `Google search results for "${query}":\n\n${lines.join('\n\n')}`
   } finally {
     await context.close()
