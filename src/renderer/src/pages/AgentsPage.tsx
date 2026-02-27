@@ -1,6 +1,24 @@
 import React, { useState } from 'react'
-import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench } from 'lucide-react'
+import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench, Lock } from 'lucide-react'
 import { useStore, type Agent } from '../store'
+import { HanaAvatar } from '../assets/avatars/HanaAvatar'
+import { RenAvatar } from '../assets/avatars/RenAvatar'
+import { YukiAvatar } from '../assets/avatars/YukiAvatar'
+import { KiraAvatar } from '../assets/avatars/KiraAvatar'
+
+const AVATAR_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  hana: HanaAvatar,
+  ren: RenAvatar,
+  yuki: YukiAvatar,
+  kira: KiraAvatar,
+}
+
+const ACCENT_MAP: Record<string, string> = {
+  hana: '#F472B6',
+  ren: '#60A5FA',
+  yuki: '#A78BFA',
+  kira: '#34D399',
+}
 
 const PROVIDER_LABELS = { ollama: 'Ollama', litellm: 'LiteLLM' }
 
@@ -45,6 +63,7 @@ function AgentModal({
   onClose: () => void
   availableModels: string[]
 }) {
+  const isDefault = Boolean(initial?.is_default)
   const [form, setForm] = useState<AgentFormData>({
     name: initial?.name || '',
     description: initial?.description || '',
@@ -149,14 +168,23 @@ function AgentModal({
 
           {/* System Prompt */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-zinc-400">System Prompt</label>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-medium text-zinc-400">System Prompt</label>
+              {isDefault && <Lock size={10} className="text-zinc-600" />}
+            </div>
             <textarea
               value={form.system_prompt}
-              onChange={(e) => update('system_prompt', e.target.value)}
+              onChange={(e) => !isDefault && update('system_prompt', e.target.value)}
+              readOnly={isDefault}
               placeholder="You are a helpful assistant…"
               rows={4}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors resize-none selectable"
+              className={`w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none transition-colors resize-none selectable ${isDefault ? 'opacity-60 cursor-default' : 'focus:border-indigo-500/60'}`}
             />
+            {isDefault && (
+              <p className="text-[11px] text-zinc-600 flex items-center gap-1">
+                <Lock size={9} /> System prompt is read-only for built-in agents.
+              </p>
+            )}
           </div>
 
           {/* Tools */}
@@ -269,15 +297,36 @@ function AgentCard({
   onDelete: () => void
   onChat: () => void
 }) {
+  const AvatarComponent = agent.avatar ? AVATAR_MAP[agent.avatar] : null
+  const accentColor = agent.avatar ? ACCENT_MAP[agent.avatar] : undefined
+  const isDefault = Boolean(agent.is_default)
+
   return (
-    <div className="group relative bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-5 transition-all duration-200 animate-fade-in">
+    <div
+      className="group relative bg-zinc-900 border rounded-2xl p-5 transition-all duration-200 animate-fade-in hover:border-zinc-600"
+      style={{ borderColor: accentColor ? `${accentColor}40` : undefined }}
+    >
       <div className="flex items-start gap-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/20 flex items-center justify-center shrink-0">
-          <Bot size={18} className="text-indigo-400" />
-        </div>
+        {/* Avatar or default Bot icon */}
+        {AvatarComponent ? (
+          <div className="w-14 h-14 shrink-0 rounded-xl overflow-hidden" style={{ filter: 'drop-shadow(0 0 6px ' + accentColor + '55)' }}>
+            <AvatarComponent className="w-full h-full" />
+          </div>
+        ) : (
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 border border-indigo-500/20 flex items-center justify-center shrink-0">
+            <Bot size={18} className="text-indigo-400" />
+          </div>
+        )}
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-sm font-semibold text-zinc-100 truncate">{agent.name}</h3>
+            {isDefault && (
+              <span className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border" style={{ color: accentColor, borderColor: `${accentColor}60`, background: `${accentColor}15` }}>
+                <Lock size={8} />
+                Default
+              </span>
+            )}
             <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">
               {PROVIDER_LABELS[agent.provider as keyof typeof PROVIDER_LABELS] || agent.provider}
             </span>
@@ -315,7 +364,8 @@ function AgentCard({
       <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-800">
         <button
           onClick={onChat}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 text-xs font-medium transition-colors border border-indigo-500/20"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border"
+          style={accentColor ? { color: accentColor, borderColor: `${accentColor}40`, background: `${accentColor}15` } : { color: '#818cf8', borderColor: '#4f46e540', background: '#4f46e510' }}
         >
           Chat
           <ChevronRight size={11} />
@@ -325,15 +375,17 @@ function AgentCard({
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
         >
           <Edit2 size={11} />
-          Edit
+          {isDefault ? 'View' : 'Edit'}
         </button>
-        <button
-          onClick={onDelete}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 text-xs transition-colors"
-        >
-          <Trash2 size={11} />
-          Delete
-        </button>
+        {!isDefault && (
+          <button
+            onClick={onDelete}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 text-xs transition-colors"
+          >
+            <Trash2 size={11} />
+            Delete
+          </button>
+        )}
       </div>
     </div>
   )

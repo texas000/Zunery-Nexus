@@ -25,19 +25,20 @@ Seed the database with four built-in agents at first launch. Each has a unique J
 
 ### 1.2 Tasks
 
-- [ ] **DB seeding** — add a `is_default` boolean column to the `agents` table so built-in agents are protected from deletion
-- [ ] **System prompts** — write detailed anime-flavored system prompts for each agent (personality, speech style, domain expertise)
-- [ ] **Avatar assets** — add four anime-style SVG avatar illustrations (one per agent) in `src/renderer/src/assets/avatars/`
-  - Each avatar should have **animated eyes** that **blink smoothly** every 3-5 seconds (CSS animation or SVG animation)
-  - Add **subtle floating movement** to each avatar — gentle up/down or slight sway (2-3px range, 4-6s duration) to make them feel alive and breathing
-  - Animations should loop infinitely and feel natural/organic, not robotic
-- [ ] **Color themes** — assign a distinct accent color per agent used in the dashboard cards and chat headers:
+- [x] **DB seeding** — added `is_default` and `avatar` columns via safe `PRAGMA table_info` migration in `database.ts`
+- [x] **System prompts** — detailed anime-flavored system prompts written for each agent (personality, speech style, domain expertise)
+- [x] **Avatar assets** — four anime-style SVG React components created in `src/renderer/src/assets/avatars/`
+  - Each avatar has **animated eyes** that blink smoothly every 4-5 seconds (CSS keyframes + `transform-box: fill-box`)
+  - Each avatar has a **floating/breathing** animation (3-4px vertical, 5-6.5s loop)
+  - Yuki additionally has a gentle sway and a twinkling star hairclip animation
+  - Kira has a glowing green hair-streak pulse animation
+- [x] **Color themes** — accent colors applied to agent cards (borders, Chat button, Default badge):
   - Hana → soft pink `#F472B6`
   - Ren → deep blue `#60A5FA`
   - Yuki → lavender `#A78BFA`
   - Kira → electric green `#34D399`
-- [ ] **Seeding logic** — on app startup in `database.ts`, check if default agents exist; if not, insert them with fixed UUIDs so they are idempotent
-- [ ] **Protect defaults** — hide "Delete" button and lock system prompt field in `AgentsPage.tsx` for agents where `is_default = true`
+- [x] **Seeding logic** — agents seeded at startup with fixed UUIDs using `INSERT OR IGNORE` (idempotent)
+- [x] **Protect defaults** — Delete button hidden, Edit → View label, system prompt locked with read-only + lock icon
 
 ### 1.3 Animation Specifications
 

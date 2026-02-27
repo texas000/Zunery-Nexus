@@ -11,6 +11,8 @@ export interface Agent {
   temperature: number
   provider: 'ollama' | 'litellm'
   tools: string
+  is_default: number
+  avatar: string
   created_at: string
   updated_at: string
 }
