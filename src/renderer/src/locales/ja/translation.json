@@ -84,6 +84,6 @@
   },
   "tools": {
     "webSearch": "ウェブ検索",
-    "webSearchDesc": "DuckDuckGoで最新情報やニュースを検索します"
+    "webSearchDesc": "Googleで最新情報やニュースを検索します"
   }
 }

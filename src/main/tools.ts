@@ -1,4 +1,7 @@
-import axios from 'axios'
+import { chromium, type Browser } from 'playwright-core'
+import { existsSync, readdirSync } from 'fs'
+import { join } from 'path'
+import { execSync } from 'child_process'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,7 +31,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: 'web_search',
     label: 'Web Search',
-    description: 'Search DuckDuckGo to find current information, news, and facts',
+    description: 'Search Google to find current information, news, and facts',
     icon: 'Search',
   },
 ]
@@ -41,7 +44,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     function: {
       name: 'web_search',
       description:
-        'Search the web using DuckDuckGo to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information.',
+        'Search Google to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information.',
       parameters: {
         type: 'object',
         properties: {
@@ -64,12 +67,11 @@ export async function executeToolCall(name: string, args: Record<string, unknown
     let result: string
     switch (name) {
       case 'web_search':
-        result = await duckDuckGoSearch(String(args.query ?? ''))
+        result = await googleSearch(String(args.query ?? ''))
         break
       default:
         result = `Tool "${name}" is not available.`
     }
-    // Truncate long logs to avoid huge console output
     console.log('[TOOLS] result', { name, summary: result && result.length > 200 ? result.slice(0, 200) + '…' : result })
     return result
   } catch (err: unknown) {
@@ -79,88 +81,139 @@ export async function executeToolCall(name: string, args: Record<string, unknown
   }
 }
 
-// ─── DuckDuckGo ───────────────────────────────────────────────────────────────
+// ─── Chromium browser management ──────────────────────────────────────────────
 
-async function duckDuckGoSearch(query: string): Promise<string> {
+let _browser: Browser | null = null
+
+function findChromiumPath(): string | undefined {
+  const home = process.env.HOME || process.env.USERPROFILE || '/root'
+  const cacheDir = join(home, '.cache', 'ms-playwright')
+
+  if (existsSync(cacheDir)) {
+    try {
+      const dirs = readdirSync(cacheDir).sort().reverse()
+      for (const dir of dirs) {
+        if (!dir.startsWith('chromium')) continue
+        const candidates = [
+          join(cacheDir, dir, 'chrome-headless-shell-linux64', 'chrome-headless-shell'),
+          join(cacheDir, dir, 'chrome-linux', 'chrome'),
+          join(cacheDir, dir, 'chrome-linux64', 'chrome'),
+          join(cacheDir, dir, 'chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
+          join(cacheDir, dir, 'chrome-win', 'chrome.exe'),
+        ]
+        for (const p of candidates) if (existsSync(p)) return p
+      }
+    } catch { /* continue */ }
+  }
+
+  // Try system-installed Chrome / Chromium
+  for (const cmd of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
+    try {
+      const p = execSync(`which ${cmd} 2>/dev/null`, { stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim()
+      if (p && existsSync(p)) return p
+    } catch { /* continue */ }
+  }
+
+  return undefined
+}
+
+async function getBrowser(): Promise<Browser> {
+  if (_browser?.isConnected()) return _browser
+  const executablePath = findChromiumPath()
+  console.log('[TOOLS] launching browser', { executablePath: executablePath ?? '(playwright default)' })
+  _browser = await chromium.launch({
+    headless: true,
+    executablePath,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+    ],
+  })
+  _browser.on('disconnected', () => { _browser = null })
+  return _browser
+}
+
+// ─── Google Search ─────────────────────────────────────────────────────────────
+
+async function googleSearch(query: string): Promise<string> {
   if (!query.trim()) return 'No search query provided.'
 
-  const parts: string[] = []
+  const browser = await getBrowser()
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    locale: 'en-US',
+    viewport: { width: 1280, height: 800 },
+    extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
+  })
+  const page = await context.newPage()
 
-  // 1. Instant Answer API (structured data)
   try {
-    const ia = await axios.get('https://api.duckduckgo.com/', {
-      params: { q: query, format: 'json', no_redirect: 1, no_html: 1, skip_disambig: 1 },
-      timeout: 8000,
-      headers: { 'User-Agent': 'ZuneryNexus/1.0' },
-    })
-    const d = ia.data
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en&gl=us&num=10`
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 })
 
-    if (d.Answer) parts.push(`Direct answer: ${d.Answer}`)
-    if (d.AbstractText) {
-      parts.push(`Summary: ${d.AbstractText}`)
-      if (d.AbstractURL) parts.push(`Source: ${d.AbstractURL}`)
-    }
-    if (d.Definition) parts.push(`Definition: ${d.Definition}`)
+    // Wait for either the results container or a known result element
+    await page.waitForSelector('#rso, #search', { timeout: 12000 }).catch(() => {})
 
-    const related: Array<{ Text: string; FirstURL: string }> = (d.RelatedTopics || [])
-      .filter((t: Record<string, string>) => t.Text && t.FirstURL)
-      .slice(0, 5)
+    const results = await page.evaluate(() => {
+      const items: Array<{ title: string; url: string; snippet: string }> = []
 
-    if (related.length > 0 && !parts.length) {
-      // Only use related topics if we have nothing else yet
-      parts.push('Related results:')
-      related.forEach((t) => parts.push(`• ${t.Text}\n  ${t.FirstURL}`))
-    }
-  } catch {
-    // continue to HTML fallback
-  }
+      // Walk all result blocks — use multiple selector strategies for robustness
+      const blocks = Array.from(
+        document.querySelectorAll('#rso .g, #rso > div > div, [data-sokoban-container], [data-hveid]')
+      )
 
-  // 2. HTML search for real web results
-  try {
-    const html = await axios.get('https://html.duckduckgo.com/html/', {
-      params: { q: query },
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-        Accept: 'text/html',
-      },
-      timeout: 10000,
-    })
+      for (const block of blocks) {
+        const h3 = block.querySelector('h3')
+        if (!h3) continue
 
-    const body: string = html.data
-    const webResults: string[] = []
+        const title = h3.textContent?.trim() ?? ''
+        if (!title) continue
 
-    // Extract result blocks: title + snippet
-    const blockRe = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g
-    const titleRe = /<a[^>]+class="result__a"[^>]*>([\s\S]*?)<\/a>/
-    const snippetRe = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/
+        // URL: walk up from h3 to the nearest <a>
+        const anchor =
+          (h3.closest('a') as HTMLAnchorElement | null) ??
+          (block.querySelector('a[href^="http"], a[href^="/url"]') as HTMLAnchorElement | null)
+        let href = anchor?.href ?? anchor?.getAttribute('href') ?? ''
 
-    let match: RegExpExecArray | null
-    let count = 0
-    // eslint-disable-next-line no-cond-assign
-    while ((match = blockRe.exec(body)) !== null && count < 6) {
-      const block = match[1]
-      const titleMatch = titleRe.exec(block)
-      const snippetMatch = snippetRe.exec(block)
-      if (titleMatch) {
-        const title = titleMatch[1].replace(/<[^>]+>/g, '').trim()
-        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, '').trim() : ''
-        if (title) {
-          webResults.push(`• ${title}${snippet ? `\n  ${snippet}` : ''}`)
-          count++
+        // Unwrap Google redirect URLs (/url?q=...)
+        if (href.includes('/url?')) {
+          try {
+            href = new URL(href).searchParams.get('q') ?? href
+          } catch { /* keep raw */ }
         }
+
+        // Skip Google-internal links
+        if (!href || href.includes('google.com') || href.startsWith('#')) continue
+
+        // Snippet: try several known class/attribute patterns Google uses
+        const snippetEl = block.querySelector(
+          '[data-sncf="1"], .VwiC3b, .lEBKkf, [class*="r025kc"], [class*="s3v9rd"], .st'
+        )
+        const snippet = snippetEl?.textContent?.trim() ?? ''
+
+        items.push({ title, url: href, snippet })
+        if (items.length >= 6) break
       }
+
+      return items
+    })
+
+    if (results.length === 0) {
+      return `No results found for "${query}". Google may have returned a CAPTCHA or the query produced no organic results.`
     }
 
-    if (webResults.length > 0) {
-      parts.push('\nWeb results:')
-      parts.push(...webResults)
-    }
-  } catch {
-    // HTML fallback failed; that's ok
+    const lines = results.map(
+      (r, i) =>
+        `[${i + 1}] ${r.title}\n    ${r.url}${r.snippet ? `\n    ${r.snippet}` : ''}`
+    )
+
+    return `Google search results for "${query}":\n\n${lines.join('\n\n')}`
+  } finally {
+    await context.close()
   }
-
-  return parts.length > 0
-    ? parts.join('\n')
-    : `No results found for "${query}". Try rephrasing your query.`
 }
