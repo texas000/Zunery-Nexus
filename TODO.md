@@ -28,6 +28,9 @@ Seed the database with four built-in agents at first launch. Each has a unique J
 - [ ] **DB seeding** — add a `is_default` boolean column to the `agents` table so built-in agents are protected from deletion
 - [ ] **System prompts** — write detailed anime-flavored system prompts for each agent (personality, speech style, domain expertise)
 - [ ] **Avatar assets** — add four anime-style SVG avatar illustrations (one per agent) in `src/renderer/src/assets/avatars/`
+  - Each avatar should have **animated eyes** that **blink smoothly** every 3-5 seconds (CSS animation or SVG animation)
+  - Add **subtle floating movement** to each avatar — gentle up/down or slight sway (2-3px range, 4-6s duration) to make them feel alive and breathing
+  - Animations should loop infinitely and feel natural/organic, not robotic
 - [ ] **Color themes** — assign a distinct accent color per agent used in the dashboard cards and chat headers:
   - Hana → soft pink `#F472B6`
   - Ren → deep blue `#60A5FA`
@@ -35,6 +38,37 @@ Seed the database with four built-in agents at first launch. Each has a unique J
   - Kira → electric green `#34D399`
 - [ ] **Seeding logic** — on app startup in `database.ts`, check if default agents exist; if not, insert them with fixed UUIDs so they are idempotent
 - [ ] **Protect defaults** — hide "Delete" button and lock system prompt field in `AgentsPage.tsx` for agents where `is_default = true`
+
+### 1.3 Animation Specifications
+
+Each avatar SVG should include:
+
+| Animation | Details |
+|-----------|---------|
+| **Eye Blink** | `0.3s` ease-in-out eyelid closure + `0.1s` pause + `0.3s` ease-out opening; repeat every 3-5 seconds with randomized intervals (3.5s ± 1s) |
+| **Floating Breath** | Gentle vertical translation `transform: translateY(var(--float))` cycling between `-2px` and `+2px` over `5s`, easing in-out sine |
+| **Idle Sway** | Subtle horizontal oscillation (optional) or slight rotation (`-0.5deg` to `+0.5deg`) over `6s` for character personality |
+| **Entrance** | Fade in + scale up on first dashboard load (0.5s, cubic-bezier for smooth ease) |
+
+**CSS Approach (Recommended)**:
+```css
+@keyframes blink {
+  0%, 85%, 100% { height: var(--eye-height); }
+  90%, 95% { height: 2px; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.avatar-eyes { animation: blink 4s steps(1, end) 3.5s infinite; }
+.avatar { animation: float 5s ease-in-out infinite; }
+```
+
+**SVG Approach (Alternative)**:
+- Use `<animate>` elements inside SVG for eyes and body groups
+- Allows more granular control and works independently of CSS
 
 ---
 
