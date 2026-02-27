@@ -98,12 +98,12 @@ Replace the current empty chat default view with a grid dashboard that shows all
 
 ### 2.2 Tasks
 
-- [ ] **Create `DashboardPage.tsx`** — new page at `src/renderer/src/pages/DashboardPage.tsx`
-- [ ] **Agent cards** — each card displays: avatar image, agent name, persona name, short description, accent color border, and a "Chat Now" button
-- [ ] **Responsive grid** — 2×2 on small windows, 4×1 on wide — using Tailwind CSS grid
-- [ ] **Set dashboard as default view** — change initial `view` in Zustand store from `'chat'` to `'dashboard'`
-- [ ] **"Chat Now" button** — clicking opens a new conversation with that agent and navigates to `ChatPage`
-- [ ] **Sidebar link** — add "Home" navigation item in `Sidebar.tsx` that links to the dashboard
+- [x] **Create `DashboardPage.tsx`** — new page at `src/renderer/src/pages/DashboardPage.tsx`
+- [x] **Agent cards** — each card displays animated avatar, persona name, role title, description, accent-colored border/glow, and "Chat Now" button
+- [x] **Responsive grid** — `grid-cols-2 xl:grid-cols-4` (2×2 → 4×1)
+- [x] **Set dashboard as default view** — Zustand store initial `view: 'dashboard'`
+- [x] **"Chat Now" button** — creates a new conversation with that agent and navigates to `ChatPage`
+- [x] **Sidebar link** — "Home" nav item with `LayoutGrid` icon added to `Sidebar.tsx`
 - [ ] **Recent activity panel** *(optional v2)* — show last message snippet per agent below each card
 
 ---
@@ -123,14 +123,13 @@ When the user types a prompt in the dashboard's global input (or in a special "A
 
 ### 3.2 Tasks
 
-- [ ] **`orchestrator.ts`** — create `src/main/orchestrator.ts` with a `classifyPrompt(text: string): AgentRole` function
-  - Primary approach: use a lightweight LLM call with a classification system prompt
-  - Fallback: keyword scoring map when LLM is unavailable
-- [ ] **IPC handler** — add `orchestrator:route` IPC channel in `ipc-handlers.ts` that accepts a prompt, returns `{ agentId, agentName, reasoning }`
-- [ ] **Dashboard input handler** — wire the global dashboard prompt input to call `orchestrator:route`, then auto-open a chat with the selected agent and inject the prompt
-- [ ] **Routing indicator** — show a small toast or banner: `"Routing to Kira (Developer)..."` before opening the chat
-- [ ] **Manual override** — allow user to tap a different agent card to override the orchestrator's choice
-- [ ] **Multi-agent mode** *(optional v2)* — if prompt spans multiple domains, send to multiple agents and display a split response view
+- [x] **`orchestrator.ts`** — keyword scoring classifier with multi-word phrase weighting; Hana as fallback; covers 30+ keywords per domain
+- [x] **IPC handler** — `orchestrator:route` channel in `ipc-handlers.ts`; preload exposed via `window.api.orchestrator.route()`
+- [x] **Dashboard input handler** — orchestrator called on submit; result used to open correct agent chat
+- [x] **Routing indicator** — animated toast with agent avatar + name visible for 1.2s before navigating
+- [x] **Manual override** — clicking any agent card directly bypasses the orchestrator
+- [x] **`pendingPrompt` store field** — `ChatPage` auto-sends the orchestrated prompt on mount
+- [ ] **Multi-agent mode** *(optional v2)* — split response view
 
 ---
 
@@ -151,38 +150,38 @@ Add runtime language switching with translations for all UI strings.
 
 #### Setup
 
-- [ ] **Install i18next** — `bun add i18next react-i18next`
-- [ ] **Create locale files** — `src/renderer/src/locales/{en,ja,ko,zh}/translation.json`
-- [ ] **i18n bootstrap** — `src/renderer/src/i18n.ts` initializing i18next with language detection (localStorage → navigator.language → fallback `en`)
-- [ ] **Wire into React** — wrap app root in `I18nextProvider` in `App.tsx`
+- [x] **Install i18next** — `bun add i18next react-i18next`
+- [x] **Create locale files** — `src/renderer/src/locales/{en,ja,ko,zh}/translation.json`
+- [x] **i18n bootstrap** — `src/renderer/src/i18n.ts` with localStorage → navigator.language → 'en' detection
+- [x] **Wire into React** — i18n imported in `main.tsx` before app render; `useTranslation()` used in components
 
 #### Translation Keys (all UI strings)
 
-- [ ] **Sidebar** — nav labels (Home, Chat, Agents, Settings), conversation list empty state
-- [ ] **DashboardPage** — hero text, agent card labels, orchestrator input placeholder
-- [ ] **ChatPage** — input placeholder, send button, streaming indicator, tool call labels
-- [ ] **AgentsPage** — form labels (Name, Description, Model, Temperature, System Prompt, Tools), buttons (Save, Cancel, Delete, New Agent)
-- [ ] **SettingsPage** — section headers, field labels, test buttons, status messages
-- [ ] **Agent personas** — optionally localize agent description text shown in cards
+- [x] **Sidebar** — Home, Chat, Agents, Settings, conversation list empty state, agent section label
+- [x] **DashboardPage** — hero subtitle/title/description, card "Chat Now", orchestrator placeholder + hint
+- [ ] **ChatPage** — input placeholder, send button, streaming indicator, tool call labels *(partial)*
+- [ ] **AgentsPage** — form labels, buttons *(keys defined, component wiring in progress)*
+- [x] **SettingsPage** — Language section header + description; provider label wired
+- [ ] **Agent personas** — localized persona descriptions *(optional v2)*
 
 #### Language Selector UI
 
-- [ ] **Language selector component** — dropdown or flag buttons placed in `SettingsPage.tsx` under a new "Language" section
-- [ ] **Persist preference** — store selected language in SQLite `settings` table under key `ui.language`
-- [ ] **Load on startup** — read `ui.language` from settings and call `i18n.changeLanguage()` during app init in `App.tsx`
+- [x] **Language selector** — button row in `SettingsPage.tsx` under "Language" section (EN / 日本語 / 한국어 / 中文)
+- [x] **Persist preference** — stored in SQLite `ui.language` key via `window.api.settings.set`
+- [x] **Load on startup** — `App.tsx` reads `ui.language` from settings and calls `i18n.changeLanguage()`
 
 #### Japanese Translations (agent personas)
 
-- [ ] Translate all four agent persona names and descriptions into Japanese
-- [ ] Translate system prompts to optionally respond in Japanese when the UI language is set to `ja`
+- [x] All four locale files include translated UI strings for JA, KO, ZH
+- [ ] Translate system prompts to optionally respond in UI language *(optional v2)*
 
 ---
 
 ## 5. Database Schema Changes
 
-- [ ] Add `is_default INTEGER DEFAULT 0` column to `agents` table (migration safe — use `ALTER TABLE ... ADD COLUMN`)
-- [ ] Add `ui.language` key to default settings in `database.ts`
-- [ ] Store agent avatar path in a new `avatar` TEXT column on `agents`
+- [x] Add `is_default INTEGER DEFAULT 0` column to `agents` table (safe migration via `PRAGMA table_info`)
+- [x] `ui.language` persisted in SQLite settings table via `window.api.settings.set`
+- [x] `avatar TEXT DEFAULT ''` column added to `agents` table
 
 ---
 

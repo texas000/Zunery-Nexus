@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback } from 'react'
 import {
+  LayoutGrid,
   MessageSquare,
   Bot,
   Settings,
@@ -9,6 +10,7 @@ import {
   Zap,
   ZapOff,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useStore, type Conversation } from '../store'
 
 function NavItem({
@@ -76,6 +78,7 @@ function ConversationItem({
 }
 
 export function Sidebar() {
+  const { t } = useTranslation()
   const {
     view,
     setView,
@@ -139,28 +142,29 @@ export function Sidebar() {
 
       {/* Navigation */}
       <div className="p-3 space-y-1 border-b border-zinc-800/60 shrink-0">
-        <NavItem icon={MessageSquare} label="Chat" active={view === 'chat'} onClick={() => setView('chat')} />
+        <NavItem icon={LayoutGrid} label={t('nav.home')} active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+        <NavItem icon={MessageSquare} label={t('nav.chat')} active={view === 'chat'} onClick={() => setView('chat')} />
         <NavItem
           icon={Bot}
-          label="Agents"
+          label={t('nav.agents')}
           active={view === 'agents'}
           onClick={() => setView('agents')}
           badge={agents.length > 0 ? String(agents.length) : undefined}
         />
-        <NavItem icon={Settings} label="Settings" active={view === 'settings'} onClick={() => setView('settings')} />
+        <NavItem icon={Settings} label={t('nav.settings')} active={view === 'settings'} onClick={() => setView('settings')} />
       </div>
 
       {/* Agent picker */}
       {view === 'chat' && (
         <div className="p-3 border-b border-zinc-800/60 shrink-0">
-          <p className="text-xs text-zinc-500 font-medium mb-2 px-1">AGENT</p>
+          <p className="text-xs text-zinc-500 font-medium mb-2 px-1">{t('chat.agent').toUpperCase()}</p>
           <div className="space-y-1">
             {agents.length === 0 ? (
               <button
                 onClick={() => setView('agents')}
                 className="w-full text-left text-xs text-zinc-500 hover:text-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-800/50 transition-colors no-drag"
               >
-                + Create your first agent
+                {t('chat.createFirstAgent')}
               </button>
             ) : (
               agents.map((agent) => (
@@ -189,7 +193,7 @@ export function Sidebar() {
       {view === 'chat' && activeAgentId && (
         <div className="flex-1 overflow-y-auto p-3">
           <div className="flex items-center justify-between mb-2 px-1">
-            <p className="text-xs text-zinc-500 font-medium">CONVERSATIONS</p>
+            <p className="text-xs text-zinc-500 font-medium">{t('chat.conversations').toUpperCase()}</p>
             <button
               onClick={handleNewConversation}
               className="no-drag p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
@@ -204,7 +208,7 @@ export function Sidebar() {
               onClick={handleNewConversation}
               className="w-full text-xs text-zinc-600 hover:text-zinc-400 px-3 py-2 rounded-lg hover:bg-zinc-800/40 transition-colors no-drag text-left"
             >
-              + Start a conversation
+              {t('chat.startConversation')}
             </button>
           ) : (
             <div className="space-y-0.5">

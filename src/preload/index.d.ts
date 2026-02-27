@@ -9,8 +9,17 @@ export interface Agent {
   temperature: number
   provider: 'ollama' | 'litellm'
   tools: string
+  is_default: number
+  avatar: string
   created_at: string
   updated_at: string
+}
+
+export interface RouteResult {
+  agentId: string
+  agentName: string
+  avatar: string
+  reasoning: string
 }
 
 export interface Conversation {
@@ -71,6 +80,9 @@ export interface API {
     status: () => Promise<{ running: boolean; version?: string }>
     syncAgents: () => Promise<{ ok: boolean; synced?: number; error?: string }>
     onStatusChange: (callback: (status: { running: boolean; error?: string }) => void) => () => void
+  }
+  orchestrator: {
+    route: (prompt: string) => Promise<RouteResult>
   }
 }
 

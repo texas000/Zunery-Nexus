@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import * as db from './database'
+import { routePrompt } from './orchestrator'
 import {
   streamOllama,
   streamLiteLLM,
@@ -38,6 +39,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'models:list-litellm',
     'adk:status',
     'adk:sync-agents',
+    'orchestrator:route',
   ]
 
   // ─── Settings ─────────────────────────────────────────────────────────────
@@ -322,6 +324,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       )
     )
     return { ok: true, synced: results.filter((r) => r.status === 'fulfilled').length }
+  })
+
+  // ─── Orchestrator ─────────────────────────────────────────────────────────
+
+  ipcMain.handle('orchestrator:route', (_, prompt: string) => {
+    return routePrompt(prompt)
   })
 
   // ─── Emit window events (called from main index) ──────────────────────────

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Save, RefreshCw, Server, Zap, ZapOff, AlertCircle, CheckCircle, Cpu } from 'lucide-react'
+import { Save, RefreshCw, Server, Zap, ZapOff, AlertCircle, CheckCircle, Cpu, Languages } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import i18n, { SUPPORTED_LANGUAGES, type LangCode } from '../i18n'
 import { useStore } from '../store'
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
@@ -63,7 +65,16 @@ function StatusBadge({ ok, label }: { ok: boolean | null; label: string }) {
 }
 
 export function SettingsPage() {
+  const { t } = useTranslation()
   const { settings, setSettings, updateSetting, adkRunning, setAdkRunning } = useStore()
+  const [currentLang, setCurrentLang] = useState<LangCode>((i18n.language as LangCode) || 'en')
+
+  const handleLanguageChange = async (code: LangCode) => {
+    setCurrentLang(code)
+    await i18n.changeLanguage(code)
+    localStorage.setItem('ui.language', code)
+    await window.api.settings.set('ui.language', code)
+  }
 
   const [form, setForm] = useState({
     provider: 'ollama',
@@ -164,8 +175,28 @@ export function SettingsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {/* Language */}
+        <Section title={t('settings.language')} description={t('settings.languageDesc')}>
+          <div className="flex flex-wrap gap-2">
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <button
+                key={lang.code}
+                onClick={() => handleLanguageChange(lang.code as LangCode)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  currentLang === lang.code
+                    ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300'
+                    : 'border-zinc-700 bg-zinc-800/50 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                }`}
+              >
+                <Languages size={13} />
+                {lang.label}
+              </button>
+            ))}
+          </div>
+        </Section>
+
         {/* Provider */}
-        <Section title="LLM Provider" description="Choose your primary inference provider">
+        <Section title={t('settings.provider')} description="Choose your primary inference provider">
           <div className="grid grid-cols-2 gap-3">
             {(['ollama', 'litellm'] as const).map((p) => (
               <button

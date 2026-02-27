@@ -19,8 +19,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "dist": "npm run build && electron-builder --publish never"
-    ,"icons:generate": "bash scripts/generate-icons.sh"
+    "dist": "npm run build && electron-builder --publish never",
+    "icons:generate": "bash scripts/generate-icons.sh"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
@@ -28,7 +28,9 @@
     "@types/better-sqlite3": "^7.6.13",
     "axios": "^1.13.5",
     "better-sqlite3": "^12.6.2",
+    "i18next": "^25.8.13",
     "lucide-react": "^0.575.0",
+    "react-i18next": "^16.5.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "zustand": "^5.0.11"
@@ -55,8 +57,8 @@
     "tailwindcss": "^4.2.0",
     "typescript": "^5.5.2",
     "vite": "^5.3.1"
-  }
-  ,"build": {
+  },
+  "build": {
     "appId": "com.zunery.nexus",
     "productName": "Zunery Nexus",
     "directories": {
@@ -70,16 +72,16 @@
       "resources/**"
     ],
     "mac": {
-      "target": ["dmg","zip"],
+      "target": ["dmg", "zip"],
       "category": "public.app-category.utilities",
       "icon": "build/icons/icon.icns"
     },
     "win": {
-      "target": ["nsis","zip"],
+      "target": ["nsis", "zip"],
       "icon": "build/icons/icon.ico"
     },
     "linux": {
-      "target": ["AppImage","deb"],
+      "target": ["AppImage", "deb"],
       "icon": "build/icons"
     }
   }

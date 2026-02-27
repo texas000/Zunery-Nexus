@@ -257,6 +257,8 @@ export function ChatPage() {
     streamingToolEvents,
     adkRunning,
     useAdk,
+    pendingPrompt,
+    setPendingPrompt,
     setView,
     setMessages,
     setIsStreaming,
@@ -324,12 +326,18 @@ export function ChatPage() {
     return conv.id
   }, [activeAgentId, addConversation, setActiveConversation])
 
-  const handleSend = async () => {
-    const content = input.trim()
+  // Auto-send when navigated from dashboard with a pending prompt
+  useEffect(() => {
+    if (!pendingPrompt || !activeConversationId || isStreaming) return
+    const text = pendingPrompt
+    setPendingPrompt(null)
+    sendMessage(text)
+  }, [pendingPrompt, activeConversationId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sendMessage = async (content: string) => {
     if (!content || !activeAgentId || isStreaming) return
 
     setError(null)
-    setInput('')
 
     let convId = activeConversationId
     if (!convId) {
@@ -337,7 +345,6 @@ export function ChatPage() {
       if (!convId) return
     }
 
-    // Optimistically show the user message immediately
     appendMessage({
       id: crypto.randomUUID(),
       conversation_id: convId,
@@ -351,13 +358,6 @@ export function ChatPage() {
     setStreamingMessage('streaming-' + Date.now())
 
     try {
-      console.log('chat: sending request', {
-        conversationId: convId,
-        agentId: activeAgentId,
-        content,
-        useAdk: useAdk && adkRunning,
-      })
-
       const result = await window.api.chat.send({
         conversationId: convId,
         agentId: activeAgentId,
@@ -365,11 +365,8 @@ export function ChatPage() {
         useAdk: useAdk && adkRunning,
       })
 
-      console.log('chat: received response', { assistantMessage: result?.assistantMessage })
-
       finalizeStreaming(result.assistantMessage)
 
-      // Update title in sidebar if first message
       if (messages.length === 0) {
         const title = content.slice(0, 60) + (content.length > 60 ? '…' : '')
         updateConversation(convId, title)
@@ -378,8 +375,14 @@ export function ChatPage() {
       const e = err as { message?: string }
       setError(e.message || 'Failed to send message')
       setIsStreaming(false)
-      setStreamingMessage(null)
     }
+  }
+
+  const handleSend = async () => {
+    const content = input.trim()
+    if (!content) return
+    setInput('')
+    await sendMessage(content)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

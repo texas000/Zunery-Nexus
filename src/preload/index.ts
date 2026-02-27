@@ -77,6 +77,11 @@ const api = {
       return () => ipcRenderer.removeListener('adk:status-change', handler)
     },
   },
+
+  // Orchestrator
+  orchestrator: {
+    route: (prompt: string) => ipcRenderer.invoke('orchestrator:route', prompt),
+  },
 }
 
 if (process.contextIsolated) {

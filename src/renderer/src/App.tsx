@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
+import { DashboardPage } from './pages/DashboardPage'
 import { ChatPage } from './pages/ChatPage'
 import { AgentsPage } from './pages/AgentsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useStore } from './store'
+import i18n from './i18n'
 
 export default function App() {
   const { view, setAgents, setSettings, setAdkRunning } = useStore()
@@ -17,6 +19,9 @@ export default function App() {
       ])
       setAgents(agents)
       setSettings(settings)
+      // Apply persisted language preference from DB
+      const lang = settings['ui.language']
+      if (lang && lang !== i18n.language) i18n.changeLanguage(lang)
     }
     init()
 
@@ -34,6 +39,7 @@ export default function App() {
     <div className="flex h-full bg-zinc-950">
       <Sidebar />
       <main className="flex-1 min-w-0 bg-zinc-950">
+        {view === 'dashboard' && <DashboardPage />}
         {view === 'chat' && <ChatPage />}
         {view === 'agents' && <AgentsPage />}
         {view === 'settings' && <SettingsPage />}

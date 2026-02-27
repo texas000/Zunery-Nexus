@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type View = 'chat' | 'agents' | 'settings'
+export type View = 'dashboard' | 'chat' | 'agents' | 'settings'
 
 export interface Agent {
   id: string
@@ -43,6 +43,7 @@ export interface ToolEvent {
 
 interface AppState {
   view: View
+  pendingPrompt: string | null
   agents: Agent[]
   conversations: Conversation[]
   messages: Message[]
@@ -57,6 +58,7 @@ interface AppState {
   settings: Record<string, string>
 
   setView: (v: View) => void
+  setPendingPrompt: (p: string | null) => void
   setAgents: (agents: Agent[]) => void
   addAgent: (agent: Agent) => void
   updateAgent: (agent: Agent) => void
@@ -82,7 +84,8 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  view: 'chat',
+  view: 'dashboard',
+  pendingPrompt: null,
   agents: [],
   conversations: [],
   messages: [],
@@ -97,6 +100,7 @@ export const useStore = create<AppState>((set) => ({
   settings: {},
 
   setView: (v) => set({ view: v }),
+  setPendingPrompt: (p) => set({ pendingPrompt: p }),
   setAgents: (agents) => set({ agents }),
   addAgent: (agent) => set((s) => ({ agents: [agent, ...s.agents] })),
   updateAgent: (agent) => set((s) => ({ agents: s.agents.map((a) => (a.id === agent.id ? agent : a)) })),
