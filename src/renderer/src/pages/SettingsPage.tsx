@@ -304,20 +304,7 @@ export function SettingsPage() {
 
         {/* Google ADK */}
         <Section title="Google ADK" description="Agent Development Kit for advanced agent features">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-zinc-200 font-medium">Enable Google ADK</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Runs a Python subprocess for enhanced agent capabilities</p>
-            </div>
-            <div
-              onClick={() => update('adk.enabled', form['adk.enabled'] === 'true' ? 'false' : 'true')}
-              className={`relative w-10 h-5 rounded-full cursor-pointer transition-colors ${form['adk.enabled'] === 'true' ? 'bg-indigo-600' : 'bg-zinc-700'}`}
-            >
-              <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form['adk.enabled'] === 'true' ? 'translate-x-5' : ''}`} />
-            </div>
-          </div>
-
-          <Field label="Python Executable Path" hint="Path to python3 binary. Must have google-adk installed.">
+          <Field label="Python Executable Path" hint="Path to python binary. Must have google-adk installed.">
             <Input value={form['adk.pythonPath']} onChange={(v) => update('adk.pythonPath', v)} placeholder="python3" />
           </Field>
 

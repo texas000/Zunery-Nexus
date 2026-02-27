@@ -83,6 +83,8 @@ export interface API {
   }
   orchestrator: {
     route: (prompt: string) => Promise<RouteResult>
+    team: (prompt: string) => Promise<{ ok: boolean }>
+    onTeamChunk: (callback: (chunk: { agentId: string; avatar: string; content: string; done: boolean }) => void) => () => void
   }
 }
 

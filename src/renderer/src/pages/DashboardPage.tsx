@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react'
-import { Send, ArrowRight, Sparkles } from 'lucide-react'
+import React, { useState, useRef, useEffect } from 'react'
+import { Send, ArrowRight, ArrowLeft, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useStore, type Agent } from '../store'
 import { HanaAvatar } from '../assets/avatars/HanaAvatar'
@@ -42,13 +42,10 @@ function AgentCard({ agent, onChat }: { agent: Agent; onChat: () => void }) {
       style={{ borderColor: `${accent}40`, boxShadow: `0 0 0 0 ${accent}` }}
       onClick={onChat}
     >
-      {/* Glow ring on hover */}
       <div
         className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
         style={{ boxShadow: `inset 0 0 30px ${accent}18` }}
       />
-
-      {/* Avatar */}
       <div
         className="w-28 h-28 rounded-2xl overflow-hidden"
         style={{ filter: `drop-shadow(0 0 14px ${accent}66)` }}
@@ -59,8 +56,6 @@ function AgentCard({ agent, onChat }: { agent: Agent; onChat: () => void }) {
           <div className="w-full h-full rounded-2xl flex items-center justify-center bg-zinc-800" />
         )}
       </div>
-
-      {/* Info */}
       <div className="text-center space-y-1 flex-1">
         <p className="text-[11px] font-medium tracking-widest uppercase" style={{ color: `${accent}cc` }}>
           {persona}
@@ -68,8 +63,6 @@ function AgentCard({ agent, onChat }: { agent: Agent; onChat: () => void }) {
         <h3 className="text-base font-bold text-zinc-100">{agent.name}</h3>
         <p className="text-xs text-zinc-500 line-clamp-2 max-w-[180px] mx-auto">{agent.description}</p>
       </div>
-
-      {/* Chat button */}
       <button
         onClick={(e) => { e.stopPropagation(); onChat() }}
         className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 border"
@@ -82,21 +75,69 @@ function AgentCard({ agent, onChat }: { agent: Agent; onChat: () => void }) {
   )
 }
 
-// ─── Routing Toast ───────────────────────────────────────────────────────────
+// ─── Team Response Card ───────────────────────────────────────────────────────
 
-function RoutingToast({ agentName, avatar, visible }: { agentName: string; avatar: string; visible: boolean }) {
-  const accent = ACCENT_MAP[avatar] ?? '#818cf8'
-  const AvatarComponent = AVATAR_MAP[avatar]
+function TeamCard({
+  agent,
+  content,
+  done,
+  onContinue,
+}: {
+  agent: Agent
+  content: string
+  done: boolean
+  onContinue: () => void
+}) {
+  const { t } = useTranslation()
+  const AvatarComponent = AVATAR_MAP[agent.avatar]
+  const accent = ACCENT_MAP[agent.avatar] ?? '#818cf8'
+  const persona = PERSONA_MAP[agent.avatar] ?? agent.name
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+    }
+  }, [content])
+
   return (
     <div
-      className={`fixed bottom-28 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md transition-all duration-300 z-50 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
-      style={{ borderColor: `${accent}50`, background: `${accent}22` }}
+      className="flex flex-col rounded-2xl border bg-zinc-900 overflow-hidden"
+      style={{ borderColor: `${accent}30` }}
     >
-      {AvatarComponent && <AvatarComponent className="w-7 h-7 rounded-lg overflow-hidden shrink-0" />}
-      <div>
-        <p className="text-[11px] text-zinc-400">Routing to</p>
-        <p className="text-sm font-semibold" style={{ color: accent }}>{agentName}</p>
+      {/* Card header */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 border-b" style={{ borderColor: `${accent}20` }}>
+        <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0" style={{ filter: `drop-shadow(0 0 6px ${accent}55)` }}>
+          {AvatarComponent ? <AvatarComponent className="w-full h-full" /> : <div className="w-full h-full bg-zinc-800 rounded-lg" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-medium tracking-widest uppercase truncate" style={{ color: `${accent}cc` }}>{persona}</p>
+          <p className="text-xs font-semibold text-zinc-100 truncate">{agent.name}</p>
+        </div>
+        {!done && <Loader2 size={11} className="shrink-0 animate-spin" style={{ color: accent }} />}
       </div>
+
+      {/* Streaming content */}
+      <div
+        ref={bodyRef}
+        className="flex-1 overflow-y-auto px-3 py-3 text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap min-h-[80px] max-h-48"
+      >
+        {content || <span className="text-zinc-600 italic">Thinking…</span>}
+      </div>
+
+      {/* Continue button */}
+      {done && (
+        <div className="px-3 pb-3">
+          <button
+            onClick={onContinue}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all"
+            style={{ color: accent, borderColor: `${accent}50`, background: `${accent}12` }}
+          >
+            {t('dashboard.chatNow')}
+            <ArrowRight size={10} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -107,15 +148,33 @@ export function DashboardPage() {
   const { t } = useTranslation()
   const { agents, setActiveAgent, setView, addConversation, setActiveConversation, setPendingPrompt } = useStore()
   const [prompt, setPrompt] = useState('')
-  const [routing, setRouting] = useState(false)
-  const [toast, setToast] = useState<{ agentName: string; avatar: string } | null>(null)
+  const [sending, setSending] = useState(false)
+
+  // Team mode state
+  const [teamMode, setTeamMode] = useState(false)
+  const [teamPrompt, setTeamPrompt] = useState('')
+  const [teamResponses, setTeamResponses] = useState<Record<string, { content: string; done: boolean }>>({})
+
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Only show default agents in the dashboard, in defined order
   const ORDER = ['hana', 'ren', 'yuki', 'kira']
   const defaultAgents = ORDER
     .map((key) => agents.find((a) => a.avatar === key && a.is_default))
     .filter(Boolean) as Agent[]
+
+  // Subscribe to team:chunk events
+  useEffect(() => {
+    const unsub = window.api.orchestrator.onTeamChunk((chunk) => {
+      setTeamResponses((prev) => ({
+        ...prev,
+        [chunk.agentId]: {
+          content: (prev[chunk.agentId]?.content ?? '') + chunk.content,
+          done: chunk.done,
+        },
+      }))
+    })
+    return unsub
+  }, [])
 
   const openChat = async (agent: Agent, promptText?: string) => {
     const conv = await window.api.conversations.create(agent.id, 'New Conversation')
@@ -126,33 +185,101 @@ export function DashboardPage() {
     setView('chat')
   }
 
-  const handleOrchestrate = async () => {
+  const handleSend = async () => {
     const text = prompt.trim()
-    if (!text || routing) return
-    setRouting(true)
+    if (!text || sending) return
+    setSending(true)
+    setTeamPrompt(text)
+    setTeamResponses({})
+    setTeamMode(true)
+    setPrompt('')
 
     try {
-      const result = await window.api.orchestrator.route(text)
-      const target = agents.find((a) => a.id === result.agentId)
-      if (!target) return
-
-      setToast({ agentName: result.agentName, avatar: result.avatar })
-      await new Promise((r) => setTimeout(r, 1200)) // let toast be visible
-
-      setToast(null)
-      setPrompt('')
-      await openChat(target, text)
+      await window.api.orchestrator.team(text)
     } finally {
-      setRouting(false)
+      setSending(false)
     }
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleOrchestrate()
+      handleSend()
     }
   }
+
+  const handleReset = () => {
+    setTeamMode(false)
+    setTeamResponses({})
+    setTeamPrompt('')
+  }
+
+  // ─── Team Mode View ───────────────────────────────────────────────────────
+
+  if (teamMode) {
+    return (
+      <div className="flex flex-col h-full overflow-y-auto bg-zinc-950">
+        {/* Header */}
+        <div className="flex-shrink-0 flex items-center gap-3 px-6 py-4 border-b border-zinc-800/60">
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
+          >
+            <ArrowLeft size={13} />
+            Back
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-widest">Team Response</p>
+            <p className="text-sm text-zinc-300 font-medium truncate">{teamPrompt}</p>
+          </div>
+          {sending && <Loader2 size={13} className="shrink-0 animate-spin text-zinc-500" />}
+        </div>
+
+        {/* Agent response grid */}
+        <div className="flex-1 p-6">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 max-w-5xl mx-auto">
+            {defaultAgents.map((agent) => {
+              const resp = teamResponses[agent.id]
+              return (
+                <TeamCard
+                  key={agent.id}
+                  agent={agent}
+                  content={resp?.content ?? ''}
+                  done={resp?.done ?? false}
+                  onContinue={() => openChat(agent, teamPrompt)}
+                />
+              )
+            })}
+          </div>
+        </div>
+
+        {/* New prompt bar */}
+        <div className="flex-shrink-0 px-6 pb-6 max-w-2xl mx-auto w-full">
+          <div className="relative flex items-end gap-2 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 focus-within:border-zinc-500 transition-colors shadow-xl">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder={t('dashboard.inputPlaceholder')}
+              rows={1}
+              className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-600 outline-none resize-none max-h-32 overflow-y-auto"
+              style={{ lineHeight: '1.5' }}
+              disabled={sending}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!prompt.trim() || sending}
+              className="mb-0.5 p-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shrink-0"
+            >
+              <Send size={13} />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── Default View ─────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-zinc-950 relative">
@@ -179,7 +306,6 @@ export function DashboardPage() {
       {/* Orchestrator input */}
       <div className="flex-shrink-0 px-6 pb-8 max-w-2xl mx-auto w-full">
         <div className="relative flex items-end gap-2 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3 focus-within:border-zinc-500 transition-colors shadow-xl">
-          <Sparkles size={15} className="text-zinc-600 mb-1 shrink-0" />
           <textarea
             ref={inputRef}
             value={prompt}
@@ -189,27 +315,20 @@ export function DashboardPage() {
             rows={1}
             className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-600 outline-none resize-none max-h-32 overflow-y-auto"
             style={{ lineHeight: '1.5' }}
-            disabled={routing}
+            disabled={sending}
           />
           <button
-            onClick={handleOrchestrate}
-            disabled={!prompt.trim() || routing}
+            onClick={handleSend}
+            disabled={!prompt.trim() || sending}
             className="mb-0.5 p-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors shrink-0"
           >
-            <Send size={13} />
+            {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
           </button>
         </div>
         <p className="text-[11px] text-zinc-700 text-center mt-2">
           {t('dashboard.inputHint')}
         </p>
       </div>
-
-      {/* Routing toast */}
-      <RoutingToast
-        visible={!!toast}
-        agentName={toast?.agentName ?? ''}
-        avatar={toast?.avatar ?? ''}
-      />
     </div>
   )
 }

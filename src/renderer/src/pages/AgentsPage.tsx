@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench, Lock } from 'lucide-react'
+import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Search, Wrench, Lock } from 'lucide-react'
 import { useStore, type Agent } from '../store'
 import { HanaAvatar } from '../assets/avatars/HanaAvatar'
 import { RenAvatar } from '../assets/avatars/RenAvatar'
@@ -392,7 +392,7 @@ function AgentCard({
 }
 
 export function AgentsPage() {
-  const { agents, setAgents, addAgent, updateAgent, removeAgent, setView, setActiveAgent, adkRunning } = useStore()
+  const { agents, setAgents, addAgent, updateAgent, removeAgent, setView, setActiveAgent } = useStore()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingAgent, setEditingAgent] = useState<Agent | undefined>()
   const [availableModels, setAvailableModels] = useState<string[]>([])
@@ -452,13 +452,6 @@ export function AgentsPage() {
     setView('chat')
   }
 
-  const handleSyncAdk = async () => {
-    const res = await window.api.adk.syncAgents()
-    if (res.ok) {
-      alert(`Synced ${res.synced} agent(s) to ADK`)
-    }
-  }
-
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -468,15 +461,6 @@ export function AgentsPage() {
           <p className="text-xs text-zinc-500">{agents.length} agent{agents.length !== 1 ? 's' : ''} configured</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {adkRunning && (
-            <button
-              onClick={handleSyncAdk}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/20 transition-colors"
-            >
-              <Zap size={11} />
-              Sync to ADK
-            </button>
-          )}
           <button
             onClick={handleOpenCreate}
             className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"

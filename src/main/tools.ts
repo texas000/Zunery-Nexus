@@ -44,13 +44,13 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     function: {
       name: 'web_search',
       description:
-        'Search Google to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information.',
+        'Search Google to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information. IMPORTANT: always pass short keyword phrases, never full sentences or questions.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'The search query. Be specific and concise for better results.',
+            description: 'Short keyword phrase only — 1 to 5 words. Do NOT pass a full sentence or question. Examples: "typescript generics tutorial", "latest iPhone release date", "Node.js fs readFile async". Bad examples: "What is the latest iPhone release date?", "How do I use generics in TypeScript?"',
           },
         },
         required: ['query'],
@@ -243,7 +243,7 @@ async function googleSearch(query: string): Promise<string> {
   const browser = await getBrowser()
   const context = await browser.newContext({
     userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     locale: 'en-US',
     viewport: { width: 1280, height: 800 },
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
@@ -251,56 +251,70 @@ async function googleSearch(query: string): Promise<string> {
   const page = await context.newPage()
 
   try {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en&gl=us&num=10`
+    console.log(`[TOOLS] Searching DuckDuckGo: "${query}"`)
+    // DuckDuckGo HTML endpoint — no CAPTCHA, stable selectors
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`
     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 })
-    await page.waitForSelector('#rso, #search', { timeout: 12000 }).catch(() => {})
+    await page.waitForSelector('.result', { timeout: 10000 }).catch(() => {})
 
-    const results = await page.evaluate(() => {
-      const items: Array<{ title: string; url: string; snippet: string }> = []
+    const pageTitle = await page.title()
+    console.log(`[TOOLS] Page title: "${pageTitle}"`)
 
-      const blocks = Array.from(
-        document.querySelectorAll('#rso .g, #rso > div > div, [data-sokoban-container], [data-hveid]')
-      )
+    const blockCount = await page.$$('.result').then((els) => els.length).catch(() => 0)
+    console.log(`[TOOLS] Result blocks: ${blockCount}`)
 
-      for (const block of blocks) {
-        const h3 = block.querySelector('h3')
-        if (!h3) continue
+    if (blockCount === 0) {
+      const bodyText = await page.$eval('body', (b) => (b as HTMLElement).innerText.slice(0, 400)).catch(() => '')
+      console.log('[TOOLS] No results found. Body preview:', bodyText)
+      return `No results found for "${query}".`
+    }
 
-        const title = h3.textContent?.trim() ?? ''
+    const results = await page.$$eval('.result', (elements) => {
+      const seen = new Set<string>()
+      const items: Array<{ title: string; url: string; description: string }> = []
+
+      for (const el of elements) {
+        if (items.length >= 8) break
+
+        // Title
+        const titleEl = el.querySelector('.result__title a, .result__a') as HTMLElement | null
+        const title = titleEl?.innerText?.trim()
         if (!title) continue
 
-        const anchor =
-          (h3.closest('a') as HTMLAnchorElement | null) ??
-          (block.querySelector('a[href^="http"], a[href^="/url"]') as HTMLAnchorElement | null)
-        let href = anchor?.href ?? anchor?.getAttribute('href') ?? ''
+        // URL — DuckDuckGo uses uddg= redirect params, extract the real URL
+        const anchor = titleEl?.closest('a') as HTMLAnchorElement | null
+          ?? el.querySelector('a.result__url, a[href*="uddg"]') as HTMLAnchorElement | null
+        let href = anchor?.href ?? ''
+        if (!href) continue
 
-        // Unwrap Google redirect URLs (/url?q=...)
-        if (href.includes('/url?')) {
-          try { href = new URL(href).searchParams.get('q') ?? href } catch { /* keep raw */ }
+        // Unwrap DuckDuckGo redirect: /l/?uddg=<encoded-url>
+        if (href.includes('uddg=')) {
+          try { href = decodeURIComponent(new URL(href).searchParams.get('uddg') ?? href) } catch {}
         }
+        if (!href || href.includes('duckduckgo.com') || href.startsWith('#')) continue
+        if (seen.has(href)) continue
+        seen.add(href)
 
-        if (!href || href.includes('google.com') || href.startsWith('#')) continue
+        // Snippet
+        const snippetEl = el.querySelector('.result__snippet') as HTMLElement | null
+        const description = snippetEl?.innerText?.trim() ?? ''
 
-        const snippetEl = block.querySelector(
-          '[data-sncf="1"], .VwiC3b, .lEBKkf, [class*="r025kc"], [class*="s3v9rd"], .st'
-        )
-        const snippet = snippetEl?.textContent?.trim() ?? ''
-
-        items.push({ title, url: href, snippet })
-        if (items.length >= 6) break
+        items.push({ title, url: href, description })
       }
 
       return items
     })
 
+    console.log(`[TOOLS] Extracted ${results.length} results`)
+
     if (results.length === 0) {
-      return `No results found for "${query}". Google may have returned a CAPTCHA or the query produced no organic results.`
+      return `No results found for "${query}".`
     }
 
     const lines = results.map(
-      (r, i) => `[${i + 1}] ${r.title}\n    ${r.url}${r.snippet ? `\n    ${r.snippet}` : ''}`
+      (r, i) => `[${i + 1}] ${r.title}\n    ${r.url}${r.description ? `\n    ${r.description}` : ''}`
     )
-    return `Google search results for "${query}":\n\n${lines.join('\n\n')}`
+    return `Search results for "${query}":\n\n${lines.join('\n\n')}`
   } finally {
     await context.close()
   }

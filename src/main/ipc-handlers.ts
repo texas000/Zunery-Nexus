@@ -14,6 +14,22 @@ import {
 import { registerAdkAgent, runAdkAgent, getAdkStatus, isAdkReady } from './adk-bridge'
 import { TOOL_DEFINITIONS, executeToolCall } from './tools'
 
+// ─── Language injection ────────────────────────────────────────────────────────
+
+const LANG_NAMES: Record<string, string> = {
+  ko: 'Korean (한국어)',
+  ja: 'Japanese (日本語)',
+  zh: 'Chinese (中文)',
+  en: 'English',
+}
+
+function withLanguage(systemPrompt: string, lang: string): string {
+  if (!lang || lang === 'en') return systemPrompt
+  const name = LANG_NAMES[lang] ?? lang
+  const instruction = `IMPORTANT: You must always respond in ${name}. Do not switch languages even if the user writes in another language.`
+  return systemPrompt ? `${instruction}\n\n${systemPrompt}` : instruction
+}
+
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Prevent double registration when multiple windows are created
   if ((registerIpcHandlers as any)._registered) return
@@ -40,6 +56,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'adk:status',
     'adk:sync-agents',
     'orchestrator:route',
+    'orchestrator:team',
   ]
 
   // ─── Settings ─────────────────────────────────────────────────────────────
@@ -169,6 +186,9 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       // Generate a response message ID upfront
       const assistantMsgId = randomUUID()
 
+      const lang = settings['ui.language'] || 'en'
+      const systemPrompt = withLanguage(agent.system_prompt, lang)
+
       let fullContent = ''
       const toolCallLog: Array<{ toolName: string; args: Record<string, unknown>; result: string }> = []
 
@@ -203,7 +223,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                     [...chatHistory, { role: 'user', content }],
                     activeToolDefs,
                     executeToolCall,
-                    agent.system_prompt
+                    systemPrompt
                   )
                 : ollamaChatWithTools(
                     settings['ollama.baseUrl'],
@@ -211,7 +231,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                     [...chatHistory, { role: 'user', content }],
                     activeToolDefs,
                     executeToolCall,
-                    agent.system_prompt
+                    systemPrompt
                   )
 
             let pendingToolCall: { toolName: string; args: Record<string, unknown> } | null = null
@@ -242,13 +262,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
                     settings['litellm.apiKey'],
                     agent.model,
                     [...chatHistory, { role: 'user', content }],
-                    agent.system_prompt
+                    systemPrompt
                   )
                 : streamOllama(
                     settings['ollama.baseUrl'],
                     agent.model,
                     [...chatHistory, { role: 'user', content }],
-                    agent.system_prompt
+                    systemPrompt
                   )
             for await (const chunk of stream) {
               fullContent += chunk.content
@@ -330,6 +350,53 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('orchestrator:route', (_, prompt: string) => {
     return routePrompt(prompt)
+  })
+
+  ipcMain.handle('orchestrator:team', async (event, prompt: string) => {
+    const settings = db.getSettings()
+    const lang = settings['ui.language'] || 'en'
+    const teamAgentIds = [
+      '00000000-hana-4001-a000-000000000001',
+      '00000000-ren0-4001-a000-000000000002',
+      '00000000-yuki-4001-a000-000000000003',
+      '00000000-kira-4001-a000-000000000004',
+    ]
+
+    await Promise.allSettled(
+      teamAgentIds.map(async (agentId) => {
+        const agent = db.getAgent(agentId)
+        if (!agent) return
+
+        try {
+          const msgs = [{ role: 'user' as const, content: prompt }]
+          const sysPrompt = withLanguage(agent.system_prompt, lang)
+          const stream =
+            agent.provider === 'litellm'
+              ? streamLiteLLM(settings['litellm.baseUrl'], settings['litellm.apiKey'], agent.model, msgs, sysPrompt)
+              : streamOllama(settings['ollama.baseUrl'], agent.model, msgs, sysPrompt)
+
+          for await (const chunk of stream) {
+            event.sender.send('team:chunk', {
+              agentId,
+              avatar: agent.avatar,
+              content: chunk.content,
+              done: chunk.done,
+            })
+            if (chunk.done) break
+          }
+        } catch (err: unknown) {
+          const e = err as { message?: string }
+          event.sender.send('team:chunk', {
+            agentId,
+            avatar: agent.avatar,
+            content: `Error: ${e.message || 'Unknown error'}`,
+            done: true,
+          })
+        }
+      })
+    )
+
+    return { ok: true }
   })
 
   // ─── Emit window events (called from main index) ──────────────────────────

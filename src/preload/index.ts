@@ -81,6 +81,13 @@ const api = {
   // Orchestrator
   orchestrator: {
     route: (prompt: string) => ipcRenderer.invoke('orchestrator:route', prompt),
+    team: (prompt: string) => ipcRenderer.invoke('orchestrator:team', prompt),
+    onTeamChunk: (callback: (chunk: { agentId: string; avatar: string; content: string; done: boolean }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, chunk: { agentId: string; avatar: string; content: string; done: boolean }) =>
+        callback(chunk)
+      ipcRenderer.on('team:chunk', handler)
+      return () => ipcRenderer.removeListener('team:chunk', handler)
+    },
   },
 }
 

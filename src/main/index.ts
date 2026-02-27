@@ -70,7 +70,9 @@ app.whenReady().then(async () => {
   // Start ADK server in background
   const settings = getSettings()
   if (settings['adk.enabled'] === 'true') {
-    const pythonPath = settings['adk.pythonPath'] || 'python3'
+    const rawPythonPath = settings['adk.pythonPath'] || 'python3'
+    // On Windows, 'python3' is a Microsoft Store alias — use 'python' instead
+    const pythonPath = process.platform === 'win32' && rawPythonPath === 'python3' ? 'python' : rawPythonPath
     startAdkServer(pythonPath)
       .then((result) => {
         if (result.ok) {

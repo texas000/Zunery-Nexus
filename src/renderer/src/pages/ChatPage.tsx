@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Bot, User, Plus, Zap, AlertCircle, Copy, Check, Search, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Send, Bot, User, Plus, AlertCircle, Copy, Check, Search, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore, type ToolEvent } from '../store'
 
 function TypingIndicator() {
@@ -255,8 +255,6 @@ export function ChatPage() {
     isStreaming,
     streamingContent,
     streamingToolEvents,
-    adkRunning,
-    useAdk,
     pendingPrompt,
     setPendingPrompt,
     setView,
@@ -270,7 +268,6 @@ export function ChatPage() {
     addConversation,
     setActiveConversation,
     updateConversation,
-    setUseAdk,
     appendMessage,
   } = useStore()
 
@@ -362,7 +359,7 @@ export function ChatPage() {
         conversationId: convId,
         agentId: activeAgentId,
         content,
-        useAdk: useAdk && adkRunning,
+        useAdk: false,
       })
 
       finalizeStreaming(result.assistantMessage)
@@ -421,20 +418,6 @@ export function ChatPage() {
             {activeAgent && (() => { try { const t = JSON.parse(activeAgent.tools || '[]'); return t.length > 0 ? ` · ${t.length} tool${t.length>1?'s':''}` : '' } catch { return '' } })()}
           </p>
         </div>
-        {adkRunning && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
-              <div
-                onClick={() => setUseAdk(!useAdk)}
-                className={`relative w-8 h-4 rounded-full transition-colors ${useAdk ? 'bg-emerald-600' : 'bg-zinc-700'}`}
-              >
-                <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${useAdk ? 'translate-x-4' : ''}`} />
-              </div>
-              <Zap size={11} className={useAdk ? 'text-emerald-400' : 'text-zinc-600'} />
-              ADK
-            </label>
-          </div>
-        )}
       </div>
 
       {/* Messages */}

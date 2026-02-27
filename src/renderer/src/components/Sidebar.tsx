@@ -7,8 +7,6 @@ import {
   Plus,
   Trash2,
   ChevronRight,
-  Zap,
-  ZapOff,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useStore, type Conversation } from '../store'
@@ -86,7 +84,6 @@ export function Sidebar() {
     conversations,
     activeAgentId,
     activeConversationId,
-    adkRunning,
     setActiveAgent,
     setActiveConversation,
     setConversations,
@@ -130,14 +127,6 @@ export function Sidebar() {
           <span className="font-semibold text-sm text-zinc-100">Zunery Nexus</span>
         </div>
 
-        {/* ADK status */}
-        <div className="no-drag ml-auto flex items-center gap-1.5">
-          {adkRunning ? (
-            <Zap size={12} className="text-emerald-400" title="ADK running" />
-          ) : (
-            <ZapOff size={12} className="text-zinc-600" title="ADK offline" />
-          )}
-        </div>
       </div>
 
       {/* Navigation */}

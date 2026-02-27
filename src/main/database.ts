@@ -76,7 +76,7 @@ const defaults: Record<string, string> = {
   'litellm.apiKey': '',
   'default.model': 'gemma3:latest',
   'adk.enabled': 'true',
-  'adk.pythonPath': 'python3',
+  'adk.pythonPath': process.platform === 'win32' ? 'python' : 'python3',
 }
 const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaults)) insert.run(k, v)
