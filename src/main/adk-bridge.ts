@@ -22,7 +22,7 @@ function getServerScript(): string {
   return candidates[0]
 }
 
-export async function startAdkServer(pythonPath = 'python3'): Promise<{ ok: boolean; error?: string }> {
+export async function startAdkServer(pythonPath = process.platform === 'win32' ? 'python' : 'python3'): Promise<{ ok: boolean; error?: string }> {
   if (adkReady) return { ok: true }
 
   const script = getServerScript()

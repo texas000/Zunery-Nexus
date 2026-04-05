@@ -73,6 +73,9 @@ export interface API {
   models: {
     listOllama: (baseUrl?: string) => Promise<string[]>
   }
+  tools: {
+    catalog: () => Promise<Array<{ name: string; label: string; description: string; icon: string }>>
+  }
   adk: {
     status: () => Promise<{ running: boolean; version?: string }>
     syncAgents: () => Promise<{ ok: boolean; synced?: number; error?: string }>

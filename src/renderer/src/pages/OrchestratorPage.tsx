@@ -16,24 +16,32 @@ import {
   ChevronDown,
   ArrowRight,
   Terminal,
+  BookOpen,
+  FileText,
+  FilePlus,
+  FileEdit,
+  FileX,
+  FolderOpen,
 } from 'lucide-react'
 import { useStore, type Agent, type ToolEvent, type OrchestratorLogEntry } from '../store'
 
 // ─── Log type metadata ────────────────────────────────────────────────────────
 
 const LOG_META: Record<string, { color: string; bg: string }> = {
-  input:          { color: 'text-indigo-400',  bg: 'bg-indigo-500/15' },
-  'llm-request':  { color: 'text-amber-400',   bg: 'bg-amber-500/15' },
-  'llm-prompt':   { color: 'text-amber-300',   bg: 'bg-amber-500/10' },
-  'llm-response': { color: 'text-orange-400',  bg: 'bg-orange-500/15' },
-  routing:        { color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-  'agent-request':{ color: 'text-violet-400',  bg: 'bg-violet-500/15' },
-  'agent-prompt': { color: 'text-purple-300',  bg: 'bg-purple-500/10' },
-  'agent-response':{ color: 'text-sky-400',    bg: 'bg-sky-500/15' },
-  'tool-call':    { color: 'text-yellow-400',  bg: 'bg-yellow-500/15' },
-  'tool-result':  { color: 'text-green-400',   bg: 'bg-green-500/15' },
-  info:           { color: 'text-zinc-400',    bg: 'bg-zinc-500/10' },
-  error:          { color: 'text-red-400',     bg: 'bg-red-500/15' },
+  input:               { color: 'text-indigo-400',  bg: 'bg-indigo-500/15' },
+  'llm-request':       { color: 'text-amber-400',   bg: 'bg-amber-500/15' },
+  'llm-prompt':        { color: 'text-amber-300',   bg: 'bg-amber-500/10' },
+  'llm-response':      { color: 'text-orange-400',  bg: 'bg-orange-500/15' },
+  routing:             { color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+  'agent-request':     { color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+  'agent-prompt':      { color: 'text-purple-300',  bg: 'bg-purple-500/10' },
+  'agent-response':    { color: 'text-sky-400',     bg: 'bg-sky-500/15' },
+  'tool-call':         { color: 'text-yellow-400',  bg: 'bg-yellow-500/15' },
+  'tool-result':       { color: 'text-green-400',   bg: 'bg-green-500/15' },
+  'obsidian-prefetch': { color: 'text-violet-400',  bg: 'bg-violet-500/15' },
+  'web-fallback':      { color: 'text-amber-400',   bg: 'bg-amber-500/15' },
+  info:                { color: 'text-zinc-400',    bg: 'bg-zinc-500/10' },
+  error:               { color: 'text-red-400',     bg: 'bg-red-500/15' },
 }
 
 function fmtTime(ts: number) {
@@ -164,35 +172,56 @@ function AgentBadge({ name }: { name: string }) {
   )
 }
 
+// ─── Tool display metadata ───────────────────────────────────────────────────
+
+const TOOL_DISPLAY: Record<string, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; argKey: string }> = {
+  web_search:      { label: 'Google Search',    icon: Search,     argKey: 'query' },
+  obsidian_search: { label: 'Obsidian Search',  icon: BookOpen,   argKey: 'query' },
+  obsidian_read:   { label: 'Obsidian Read',    icon: FileText,   argKey: 'path' },
+  obsidian_create: { label: 'Obsidian Create',  icon: FilePlus,   argKey: 'path' },
+  obsidian_update: { label: 'Obsidian Update',  icon: FileEdit,   argKey: 'path' },
+  obsidian_delete: { label: 'Obsidian Delete',  icon: FileX,      argKey: 'path' },
+  obsidian_list:   { label: 'Obsidian List',    icon: FolderOpen,  argKey: 'folder' },
+}
+
 // ─── StreamingToolEvents ──────────────────────────────────────────────────────
 
 function StreamingToolEvents({ events }: { events: ToolEvent[] }) {
   if (events.length === 0) return null
   return (
     <div className="space-y-1.5">
-      {events.map((ev, i) => (
-        <div
-          key={i}
-          className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border transition-all ${
-            ev.status === 'calling'
-              ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-300'
-              : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-          }`}
-        >
-          {ev.status === 'calling' ? (
-            <Loader2 size={11} className="animate-spin shrink-0" />
-          ) : (
-            <Check size={11} className="shrink-0" />
-          )}
-          <Search size={11} className="shrink-0 opacity-70" />
-          <span className="font-medium">Google Search</span>
-          <span className="opacity-60">—</span>
-          <span className="font-mono opacity-80 truncate max-w-[240px]">
-            {String(ev.args.query ?? '')}
-          </span>
-          {ev.status === 'done' && <span className="ml-auto opacity-50 shrink-0">done</span>}
-        </div>
-      ))}
+      {events.map((ev, i) => {
+        const meta = TOOL_DISPLAY[ev.toolName] || { label: ev.toolName, icon: Search, argKey: Object.keys(ev.args)[0] || 'query' }
+        const IconComp = meta.icon
+        const isObsidian = ev.toolName.startsWith('obsidian_')
+        const argValue = String(ev.args[meta.argKey] ?? ev.args[Object.keys(ev.args)[0]] ?? '')
+
+        return (
+          <div
+            key={i}
+            className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border transition-all ${
+              ev.status === 'calling'
+                ? isObsidian
+                  ? 'bg-violet-500/10 border-violet-500/20 text-violet-600 dark:text-violet-300'
+                  : 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-300'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+            }`}
+          >
+            {ev.status === 'calling' ? (
+              <Loader2 size={11} className="animate-spin shrink-0" />
+            ) : (
+              <Check size={11} className="shrink-0" />
+            )}
+            <IconComp size={11} className="shrink-0 opacity-70" />
+            <span className="font-medium">{meta.label}</span>
+            <span className="opacity-60">—</span>
+            <span className="font-mono opacity-80 truncate max-w-[240px]">
+              {argValue}
+            </span>
+            {ev.status === 'done' && <span className="ml-auto opacity-50 shrink-0">done</span>}
+          </div>
+        )
+      })}
     </div>
   )
 }

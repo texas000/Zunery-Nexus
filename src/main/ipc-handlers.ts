@@ -8,7 +8,7 @@ import {
   type ChatEvent,
 } from './llm-client'
 import { registerAdkAgent, runAdkAgent, getAdkStatus, isAdkReady } from './adk-bridge'
-import { TOOL_DEFINITIONS, executeToolCall } from './tools'
+import { getActiveToolDefinitions, getActiveToolCatalog, executeToolCall } from './tools'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // Prevent double registration when multiple windows are created
@@ -37,6 +37,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     'models:list-ollama',
     'adk:status',
     'adk:sync-agents',
+    'tools:catalog',
   ]
 
   // ─── Settings ─────────────────────────────────────────────────────────────
@@ -169,8 +170,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       const toolCallLog: Array<{ toolName: string; args: Record<string, unknown>; result: string }> = []
 
       try {
-        if (useAdk && isAdkReady()) {
-          // Use Google ADK
+        if (isAdkReady()) {
+          // Always use Google ADK when available
+          log_chat('[chat:send] Using ADK for agent', agentId)
+          // Ensure agent is registered before running
+          await registerAdkAgent({
+            id: agent.id,
+            name: agent.name,
+            model: effectiveModel,
+            provider: agent.provider,
+            system_prompt: agent.system_prompt,
+            tools: JSON.parse(agent.tools || '[]'),
+            baseUrl: settings['ollama.baseUrl'],
+            apiKey: '',
+          }).catch(() => {})
+
           const result = await runAdkAgent(agentId, conversationId, content, history.slice(0, -1))
           if (result.ok && result.content) {
             fullContent = result.content
@@ -184,8 +198,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
             .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
           const agentToolNames: string[] = JSON.parse(agent.tools || '[]')
           const activeToolDefs = agentToolNames
-            .filter((n) => TOOL_DEFINITIONS[n])
-            .map((n) => TOOL_DEFINITIONS[n])
+            .filter((n) => getActiveToolDefinitions()[n])
+            .map((n) => getActiveToolDefinitions()[n])
           const hasTools = activeToolDefs.length > 0
 
           if (hasTools) {
@@ -309,6 +323,91 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       if (agents.length === 0) throw new Error('No agents available. Create at least one agent first.')
 
+      // ── Obsidian pre-fetch: orchestrator gathers vault context before agent ──
+      const obsidianEnabled = settings['obsidian.enabled'] === 'true'
+      let obsidianContext = ''
+
+      let fallbackToWeb = false
+
+      if (obsidianEnabled) {
+        // Step 1: Always search Obsidian first when enabled
+        log('obsidian-prefetch', 'Obsidian search', `Searching vault: "${content.slice(0, 80)}"`)
+        event.sender.send('chat:tool-call', { id: 'orchestrator', toolName: 'obsidian_search', args: { query: content } })
+
+        try {
+          const searchResult = await executeToolCall('obsidian_search', { query: content, max_results: '5' })
+          event.sender.send('chat:tool-result', { id: 'orchestrator', toolName: 'obsidian_search', result: searchResult })
+
+          const hasResults = searchResult
+            && !searchResult.startsWith('No notes found')
+            && !searchResult.startsWith('Obsidian error')
+            && !searchResult.startsWith('Obsidian tool unavailable')
+
+          if (hasResults) {
+            // Obsidian found results — use them
+            obsidianContext = searchResult
+            log('obsidian-prefetch', 'Obsidian results', searchResult.length > 400 ? searchResult.slice(0, 400) + '…' : searchResult)
+
+            // Pre-read the top matching note for richer context
+            const pathMatch = searchResult.match(/\(([^)]+\.md)\)/)
+            if (pathMatch) {
+              log('obsidian-prefetch', 'Reading top note', pathMatch[1])
+              event.sender.send('chat:tool-call', { id: 'orchestrator', toolName: 'obsidian_read', args: { path: pathMatch[1] } })
+
+              try {
+                const noteContent = await executeToolCall('obsidian_read', { path: pathMatch[1] })
+                event.sender.send('chat:tool-result', { id: 'orchestrator', toolName: 'obsidian_read', result: noteContent })
+
+                if (noteContent && !noteContent.startsWith('Read error')) {
+                  const trimmed = noteContent.length > 2000 ? noteContent.slice(0, 2000) + '\n...(truncated)' : noteContent
+                  obsidianContext += '\n\n--- Full note content ---\n' + trimmed
+                  log('obsidian-prefetch', 'Note loaded', `${pathMatch[1]} (${noteContent.length} chars)`)
+                }
+              } catch {
+                // Non-critical, skip
+              }
+            }
+          } else {
+            // Step 2: No Obsidian results — fallback to web search
+            log('obsidian-prefetch', 'No vault results', 'Falling back to web search')
+            fallbackToWeb = true
+          }
+        } catch (err: unknown) {
+          log('obsidian-prefetch', 'Error', String((err as Error).message || err))
+          fallbackToWeb = true
+        }
+      }
+
+      // If obsidian had no results, try web search as fallback
+      if (fallbackToWeb) {
+        log('web-fallback', 'Web search fallback', `Searching web: "${content.slice(0, 80)}"`)
+        event.sender.send('chat:tool-call', { id: 'orchestrator', toolName: 'web_search', args: { query: content } })
+
+        try {
+          const webResult = await executeToolCall('web_search', { query: content })
+          event.sender.send('chat:tool-result', { id: 'orchestrator', toolName: 'web_search', result: webResult })
+
+          const hasWebResults = webResult
+            && !webResult.startsWith('No results found')
+            && !webResult.startsWith('No search query')
+            && !webResult.startsWith('Tool error')
+
+          if (hasWebResults) {
+            obsidianContext = webResult
+            log('web-fallback', 'Web results', webResult.length > 400 ? webResult.slice(0, 400) + '…' : webResult)
+          } else {
+            log('web-fallback', 'No web results', 'No results from web search either')
+          }
+        } catch (err: unknown) {
+          log('web-fallback', 'Web search error', String((err as Error).message || err))
+        }
+      }
+
+      // Build enriched content with pre-fetched context
+      const enrichedContent = obsidianContext
+        ? `${content}\n\n[SYSTEM: The orchestrator has already searched for relevant context. Do NOT call web_search or obsidian_search again — use this context to answer directly.]\n\n--- Context ---\n${obsidianContext}`
+        : content
+
       // If only one agent, skip routing and use it directly
       if (agents.length === 1) {
         const agent = agents[0]
@@ -320,19 +419,41 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           reason: 'Only available agent',
         })
 
-        // Stream response from the single agent
-        return await streamFromAgent(event, agent, content, settings, useAdk, log)
+        // Stream response from the single agent with enriched content
+        return await streamFromAgent(event, agent, enrichedContent, settings, useAdk, log, !!obsidianContext)
       }
 
-      // Build routing prompt with all agent descriptions
+      // Build routing prompt with all agent descriptions and their tools
+      const activeTools = getActiveToolDefinitions()
       const agentList = agents
-        .map((a) => `- ID: "${a.id}" | Name: "${a.name}" | Description: "${a.description || 'General purpose agent'}" | Model: ${a.model}`)
+        .map((a) => {
+          const toolNames: string[] = JSON.parse(a.tools || '[]')
+          const enabledTools = toolNames.filter((t) => activeTools[t])
+          const toolsStr = enabledTools.length > 0 ? ` | Tools: [${enabledTools.join(', ')}]` : ''
+          return `- ID: "${a.id}" | Name: "${a.name}" | Description: "${a.description || 'General purpose agent'}"${toolsStr}`
+        })
         .join('\n')
 
       const routingPrompt = `You are a routing orchestrator. Given a user's message, decide which agent is best suited to handle it.
 
 Available agents:
 ${agentList}
+
+Tool descriptions:
+- web_search: Search the internet (Google/Bing) for external, public information
+- obsidian_search: Search the user's LOCAL Obsidian knowledge vault (personal notes, documents, projects)
+- obsidian_read: Read a specific note from the user's Obsidian vault
+- obsidian_create: Create a new note in the user's Obsidian vault
+- obsidian_update: Update an existing note in the user's Obsidian vault
+- obsidian_delete: Delete a note from the user's Obsidian vault
+- obsidian_list: Browse the user's Obsidian vault folder structure
+
+ROUTING RULES:
+- If the user asks to search/find/read their notes, documents, knowledge, or Obsidian vault → pick an agent with obsidian_search or obsidian_read tools
+- If the user asks to create/save/write/update/delete notes → pick an agent with obsidian_create/obsidian_update/obsidian_delete tools
+- If the user asks about external/public information, news, or current events → pick an agent with web_search
+- Keywords like "note", "notes", "vault", "obsidian", "my documents", "내 노트", "메모", "기록" → obsidian tools
+- Always prefer the agent whose tools best match the request
 
 Reply with ONLY a JSON object (no markdown, no explanation):
 {"agent_id": "<id>", "reason": "<brief reason>"}
@@ -400,8 +521,8 @@ User message: "${content}"`
         reason,
       })
 
-      // Stream response from chosen agent
-      return await streamFromAgent(event, chosenAgent, content, settings, useAdk, log)
+      // Stream response from chosen agent with enriched content
+      return await streamFromAgent(event, chosenAgent, enrichedContent, settings, useAdk, log, !!obsidianContext)
     }
   )
 
@@ -412,7 +533,9 @@ User message: "${content}"`
     content: string,
     settings: Record<string, string>,
     useAdk: boolean,
-    log: (type: string, label: string, content: string, extra?: Record<string, string>) => void
+    log: (type: string, label: string, content: string, extra?: Record<string, string>) => void,
+    /** When true, obsidian context was already pre-fetched — strip search tools */
+    hasObsidianContext = false
   ) {
     const assistantMsgId = randomUUID()
     let fullContent = ''
@@ -450,13 +573,22 @@ User message: "${content}"`
       } else {
         const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = []
         const agentToolNames: string[] = JSON.parse(agent.tools || '[]')
-        const activeToolDefs = agentToolNames
-          .filter((n) => TOOL_DEFINITIONS[n])
-          .map((n) => TOOL_DEFINITIONS[n])
+        // When obsidian context was pre-fetched, strip search tools — context is already in the message
+        const searchTools = ['web_search', 'obsidian_search', 'obsidian_read', 'obsidian_list']
+        const filteredToolNames = hasObsidianContext
+          ? agentToolNames.filter((n) => !searchTools.includes(n))
+          : agentToolNames
+        const activeToolDefs = filteredToolNames
+          .filter((n) => getActiveToolDefinitions()[n])
+          .map((n) => getActiveToolDefinitions()[n])
         const hasTools = activeToolDefs.length > 0
 
+        if (hasObsidianContext) {
+          log('info', 'Obsidian context injected', 'Search tools stripped — context already provided by orchestrator', { agent: agent.name })
+        }
+
         if (hasTools) {
-          log('info', 'Tools enabled', agentToolNames.filter((n) => TOOL_DEFINITIONS[n]).join(', '), { agent: agent.name })
+          log('info', 'Tools enabled', filteredToolNames.filter((n) => getActiveToolDefinitions()[n]).join(', '), { agent: agent.name })
           const toolStream =
             ollamaChatWithTools(
                   ollamaBase,
@@ -570,6 +702,12 @@ User message: "${content}"`
       )
     )
     return { ok: true, synced: results.filter((r) => r.status === 'fulfilled').length }
+  })
+
+  // ─── Tools ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle('tools:catalog', () => {
+    return getActiveToolCatalog()
   })
 
   // ─── Emit window events (called from main index) ──────────────────────────

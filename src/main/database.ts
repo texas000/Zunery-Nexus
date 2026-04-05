@@ -59,8 +59,10 @@ const defaults: Record<string, string> = {
   'ollama.baseUrl': 'http://localhost:11434',
   'default.model': 'gemma4:26b',
   'adk.enabled': 'true',
-  'adk.pythonPath': 'python3',
+  'adk.pythonPath': process.platform === 'win32' ? 'python' : 'python3',
   'theme': 'dark',
+  'obsidian.enabled': 'false',
+  'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
 }
 const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaults)) insert.run(k, v)

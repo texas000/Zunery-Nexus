@@ -92,6 +92,11 @@ const api = {
     listOllama: (baseUrl?: string) => ipcRenderer.invoke('models:list-ollama', baseUrl),
   },
 
+  // Tools
+  tools: {
+    catalog: () => ipcRenderer.invoke('tools:catalog') as Promise<Array<{ name: string; label: string; description: string; icon: string }>>,
+  },
+
   // ADK
   adk: {
     status: () => ipcRenderer.invoke('adk:status'),

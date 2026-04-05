@@ -24,10 +24,18 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
 try:
-    from playwright_stealth import stealth_async
+    # playwright-stealth v2 API
+    from playwright_stealth import Stealth as _Stealth
+    _stealth_instance = _Stealth()
     STEALTH_AVAILABLE = True
 except ImportError:
-    STEALTH_AVAILABLE = False
+    try:
+        # playwright-stealth v1 legacy API
+        from playwright_stealth import stealth_async as _stealth_async_v1
+        _stealth_instance = None
+        STEALTH_AVAILABLE = True
+    except ImportError:
+        STEALTH_AVAILABLE = False
 
 try:
     from bs4 import BeautifulSoup
@@ -208,21 +216,30 @@ async def create_stealth_browser():
 
 
 async def apply_stealth(page: Page):
-    """Apply stealth mode to a page."""
+    """Apply stealth mode to a page (supports v1 and v2 API)."""
     if STEALTH_AVAILABLE:
-        await stealth_async(page)
-    else:
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-            window.chrome = { runtime: {} };
-        """)
+        try:
+            if _stealth_instance is not None:
+                # v2: Stealth().apply_stealth_async(page)
+                await _stealth_instance.apply_stealth_async(page)
+            else:
+                # v1: stealth_async(page)
+                await _stealth_async_v1(page)
+            return
+        except Exception as e:
+            logger.warning(f"playwright-stealth failed: {e}, falling back to manual script")
+
+    # Fallback: manual script injection
+    await page.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        window.chrome = { runtime: {} };
+    """)
 
 
 # ─── Google Result Selectors (multiple fallbacks) ────────────────────────────
 
-# Google changes its HTML often. We try multiple strategies in order.
 GOOGLE_RESULT_SELECTORS = [
     # Strategy 1: classic .g container (most stable)
     {
@@ -247,14 +264,17 @@ GOOGLE_RESULT_SELECTORS = [
     },
 ]
 
-CAPTCHA_SELECTORS = [
-    "#captcha-form",
-    "form#challenge-form",
-    "[aria-label*='CAPTCHA']",
-    "text=unusual traffic",
-    "text=verify you're not a robot",
-    "text=Our systems have detected",
-]
+# DuckDuckGo HTML (https://html.duckduckgo.com/html/) - bot-friendly, no JS required
+DDGO_RESULT_SELECTORS = {
+    "container": "div.results_links, div.result",
+    "title": "a.result__a, h2.result__title a",
+    "link": "a.result__a",
+    "snippet": "a.result__snippet",
+}
+
+# Only check true CAPTCHA indicators (title + confirmed element)
+GOOGLE_CAPTCHA_TITLE_HINTS = ["unusual traffic", "captcha", "verify", "robot"]
+GOOGLE_CAPTCHA_SELECTORS = ["#captcha-form", "form#challenge-form", "div.g-recaptcha"]
 
 
 # ─── Text Cleaning ───────────────────────────────────────────────────────────
@@ -299,38 +319,16 @@ def extract_main_content(html_content: str) -> str:
     return clean_text(body.get_text(separator='\n', strip=True))
 
 
-# ─── Search Implementation ───────────────────────────────────────────────────
+# ─── Search: Bing (primary, bot-friendly) ────────────────────────────────────
 
-async def search(query: str, max_results: int = 5) -> Dict[str, Any]:
-    """
-    Search Google for query and return structured results.
-
-    Args:
-        query: Search query string
-        max_results: Maximum number of results (1-10)
-
-    Returns:
-        dict with keys: query, results, total_results, execution_time, timestamp
-        On error: dict with key 'error'
-    """
-    if not PLAYWRIGHT_AVAILABLE:
-        return {"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"}
-
-    max_results = min(max(max_results, 1), 10)
-    slog = StepLogger("SEARCH")
-    slog.step(f"Query='{query}' max_results={max_results} stealth={'ON' if STEALTH_AVAILABLE else 'BASIC'} debug={DEBUG_MODE}")
-
+async def _search_bing(query: str, max_results: int, slog: "StepLogger") -> List["SearchResult"]:
+    """Search using Bing — reliable results, minimal bot detection."""
+    results: List[SearchResult] = []
     browser = None
     playwright_inst = None
-    start_time = datetime.now()
 
     try:
-        # 1. Launch browser
-        slog.step("Launching Chromium...")
         browser, playwright_inst = await create_stealth_browser()
-        slog.ok(f"Browser launched (headless={not DEBUG_MODE})")
-
-        # 2. New page with realistic user agent
         ua = (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -339,95 +337,222 @@ async def search(query: str, max_results: int = 5) -> Dict[str, Any]:
         page = await browser.new_page(user_agent=ua, locale="en-US")
         page.set_default_timeout(PAGE_LOAD_TIMEOUT)
         page.set_default_navigation_timeout(NAVIGATION_TIMEOUT)
-
-        # 3. Apply stealth
-        slog.step(f"Applying stealth ({'playwright-stealth' if STEALTH_AVAILABLE else 'manual script'})...")
         await apply_stealth(page)
-        slog.ok("Stealth applied")
 
-        # 4. Navigate to Google
-        search_url = f"https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us&num={max_results + 3}"
-        slog.step(f"Navigating to: {search_url}")
+        bing_url = f"https://www.bing.com/search?q={quote_plus(query)}&count={max_results + 3}"
+        slog.step(f"[Bing] Navigating to: {bing_url}")
+
+        response = await page.goto(bing_url, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+        slog.ok(f"[Bing] Page loaded (HTTP {response.status if response else '?'}, title='{await page.title()}')")
+
         try:
-            response = await page.goto(search_url, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
-            status = response.status if response else "?"
-            slog.ok(f"Page loaded (HTTP {status})")
+            await page.wait_for_selector("li.b_algo", timeout=SELECTOR_TIMEOUT)
         except PlaywrightTimeoutError:
-            slog.error("Page load timed out!")
-            await _save_debug_screenshot(page, "search_timeout")
-            return {"error": "Search timeout: Google page took too long to load", "query": query, "results": []}
-        except Exception as e:
-            slog.error(f"Navigation failed: {e}")
-            return {"error": f"Navigation failed: {e}", "query": query, "results": []}
+            slog.warn("[Bing] Results selector timeout — trying anyway")
 
-        # 5. Check for CAPTCHA
-        slog.step("Checking for CAPTCHA...")
-        captcha_found = False
-        for sel in CAPTCHA_SELECTORS:
+        containers = await page.query_selector_all("li.b_algo")
+        slog.step(f"[Bing] Found {len(containers)} result containers")
+
+        for container in containers:
+            if len(results) >= max_results:
+                break
             try:
-                elem = await page.query_selector(sel)
-                if elem:
-                    captcha_found = True
-                    slog.warn(f"CAPTCHA detected via selector: {sel}")
-                    break
-            except Exception:
-                pass
-        if captcha_found:
-            await _save_debug_screenshot(page, "captcha")
-            await _dump_page_html(page, "captcha")
-            return {
-                "error": "CAPTCHA detected: Google blocked the request. Try again in 5 minutes.",
-                "query": query,
-                "results": [],
-                "retry_after": 300,
-            }
-        slog.ok("No CAPTCHA detected")
+                # Title from h2 a
+                title_elem = await container.query_selector("h2 a")
+                title = (await title_elem.text_content() or "").strip() if title_elem else ""
 
-        # 6. Wait for results
-        slog.step("Waiting for search results...")
+                # Real URL from <cite> element (Bing wraps hrefs in redirects)
+                cite_elem = await container.query_selector("cite")
+                real_url = (await cite_elem.text_content() or "").strip() if cite_elem else ""
+                if not real_url.startswith("http"):
+                    real_url = f"https://{real_url}"
+
+                # Skip if still not a valid URL
+                if not real_url.startswith(("http://", "https://")):
+                    continue
+
+                # Snippet
+                snippet = ""
+                for snip_sel in ["p.b_lineclamp2", "p.b_algoSlug", ".b_caption p", "p"]:
+                    s_elem = await container.query_selector(snip_sel)
+                    if s_elem:
+                        snippet = (await s_elem.text_content() or "").strip()
+                        if snippet:
+                            break
+
+                if title and real_url:
+                    results.append(SearchResult(
+                        title=clean_text(title),
+                        url=real_url,
+                        snippet=clean_text(snippet)[:MAX_SNIPPET_LENGTH],
+                        position=len(results) + 1,
+                    ))
+                    slog.step(f"  [Bing {len(results)}] {title[:60]}")
+            except Exception as e:
+                slog.warn(f"[Bing] Container extraction failed: {e}")
+                continue
+
+    finally:
+        if browser:
+            await browser.close()
+        if playwright_inst:
+            await playwright_inst.stop()
+
+    return results
+
+
+# ─── Search: DuckDuckGo (secondary) ──────────────────────────────────────────
+
+async def _search_duckduckgo(query: str, max_results: int, slog: "StepLogger") -> List["SearchResult"]:
+    """Search using DuckDuckGo — fallback option."""
+    results: List[SearchResult] = []
+    browser = None
+    playwright_inst = None
+
+    try:
+        browser, playwright_inst = await create_stealth_browser()
+        ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = await browser.new_page(user_agent=ua, locale="en-US")
+        page.set_default_timeout(PAGE_LOAD_TIMEOUT)
+        page.set_default_navigation_timeout(NAVIGATION_TIMEOUT)
+        await apply_stealth(page)
+
+        # Navigate to DDG homepage first to get cookies, then search
+        await page.goto("https://duckduckgo.com/", wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+        await page.wait_for_timeout(1000)
+
+        ddg_url = f"https://duckduckgo.com/?q={quote_plus(query)}&ia=web"
+        slog.step(f"[DDG] Navigating to: {ddg_url}")
+        response = await page.goto(ddg_url, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+        slog.ok(f"[DDG] Page loaded (HTTP {response.status if response else '?'})")
+
+        # DDG is JS-heavy, wait for results
+        try:
+            await page.wait_for_selector("[data-testid='result']", timeout=SELECTOR_TIMEOUT)
+        except PlaywrightTimeoutError:
+            slog.warn("[DDG] Results selector timeout")
+
+        containers = await page.query_selector_all("[data-testid='result'], .nrn-react-div article")
+        slog.step(f"[DDG] Found {len(containers)} result containers")
+
+        for container in containers:
+            if len(results) >= max_results:
+                break
+            try:
+                title_elem = await container.query_selector("h2, [data-testid='result-title-a']")
+                title = (await title_elem.text_content() or "").strip() if title_elem else ""
+
+                link_elem = await container.query_selector("a[href]")
+                href = (await link_elem.get_attribute("href") or "") if link_elem else ""
+                if not href.startswith(("http://", "https://")):
+                    continue
+
+                snippet_elem = await container.query_selector("[data-result='snippet'], .OgdwYG")
+                snippet = (await snippet_elem.text_content() or "").strip() if snippet_elem else ""
+
+                if title and href:
+                    results.append(SearchResult(
+                        title=clean_text(title),
+                        url=href,
+                        snippet=clean_text(snippet)[:MAX_SNIPPET_LENGTH],
+                        position=len(results) + 1,
+                    ))
+                    slog.step(f"  [DDG {len(results)}] {title[:60]}")
+            except Exception as e:
+                slog.warn(f"[DDG] Container extraction failed: {e}")
+                continue
+
+    finally:
+        if browser:
+            await browser.close()
+        if playwright_inst:
+            await playwright_inst.stop()
+
+    return results
+
+
+# ─── Search: Google (fallback) ────────────────────────────────────────────────
+
+async def _search_google(query: str, max_results: int, slog: "StepLogger") -> List["SearchResult"]:
+    """Search using Google — stronger bot detection, used as fallback."""
+    results: List[SearchResult] = []
+    browser = None
+    playwright_inst = None
+
+    try:
+        browser, playwright_inst = await create_stealth_browser()
+        ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+        page = await browser.new_page(user_agent=ua, locale="en-US")
+        page.set_default_timeout(PAGE_LOAD_TIMEOUT)
+        page.set_default_navigation_timeout(NAVIGATION_TIMEOUT)
+        await apply_stealth(page)
+
+        search_url = f"https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us&num={max_results + 3}"
+        slog.step(f"[Google] Navigating to: {search_url}")
+
+        response = await page.goto(search_url, wait_until="domcontentloaded", timeout=PAGE_LOAD_TIMEOUT)
+        slog.ok(f"[Google] Page loaded (HTTP {response.status if response else '?'})")
+
+        # Check for CAPTCHA: must have the form AND a suspicious page title
+        page_title = (await page.title()).lower()
+        slog.step(f"[Google] Page title: '{page_title}'")
+
+        is_captcha = False
+        if any(hint in page_title for hint in GOOGLE_CAPTCHA_TITLE_HINTS):
+            for sel in GOOGLE_CAPTCHA_SELECTORS:
+                try:
+                    elem = await page.query_selector(sel)
+                    if elem:
+                        is_captcha = True
+                        slog.warn(f"[Google] CAPTCHA confirmed: title='{page_title}' selector='{sel}'")
+                        break
+                except Exception:
+                    pass
+
+        if is_captcha:
+            await _save_debug_screenshot(page, "google_captcha")
+            await _dump_page_html(page, "google_captcha")
+            slog.error("[Google] Blocked by CAPTCHA — Google fallback failed")
+            return []
+
+        # Wait for results
         for wait_sel in ["#search", "#rso", "div.g", "[data-hveid]"]:
             try:
                 await page.wait_for_selector(wait_sel, timeout=SELECTOR_TIMEOUT)
-                slog.ok(f"Results container found: '{wait_sel}'")
+                slog.ok(f"[Google] Results container found: '{wait_sel}'")
                 break
             except PlaywrightTimeoutError:
-                slog.warn(f"Selector '{wait_sel}' not found, trying next...")
-        else:
-            slog.warn("No standard results container found — page may have unusual layout")
-            await _save_debug_screenshot(page, "no_results_container")
-            await _dump_page_html(page, "no_results_container")
+                slog.warn(f"[Google] Selector '{wait_sel}' not found, trying next...")
 
-        # 7. Extract results using multiple strategies
-        results: List[SearchResult] = []
-        used_strategy = None
-
+        # Extract using multiple strategies
         for strategy in GOOGLE_RESULT_SELECTORS:
             if len(results) >= max_results:
                 break
-
-            container_sel = strategy["container"]
-            containers = await page.query_selector_all(container_sel)
-            slog.step(f"Strategy '{container_sel}' → found {len(containers)} containers")
-
+            containers = await page.query_selector_all(strategy["container"])
+            slog.step(f"[Google] Strategy '{strategy['container']}' → {len(containers)} containers")
             if not containers:
                 continue
 
-            used_strategy = container_sel
-            for idx, container in enumerate(containers):
+            for container in containers:
                 if len(results) >= max_results:
                     break
                 try:
-                    # Title
                     title_elem = await container.query_selector(strategy["title"])
                     title = (await title_elem.text_content() or "").strip() if title_elem else ""
 
-                    # URL
                     link_elem = await container.query_selector(strategy["link"])
                     href = (await link_elem.get_attribute("href") or "") if link_elem else ""
                     if not href.startswith(("http://", "https://")):
                         continue
 
-                    # Snippet — try each comma-separated selector
                     snippet = ""
                     for snip_sel in strategy["snippet"].split(", "):
                         elem = await container.query_selector(snip_sel.strip())
@@ -443,42 +568,95 @@ async def search(query: str, max_results: int = 5) -> Dict[str, Any]:
                             snippet=clean_text(snippet)[:MAX_SNIPPET_LENGTH],
                             position=len(results) + 1,
                         ))
-                        slog.step(f"  [{len(results)}] {title[:60]}... → {href[:60]}")
+                        slog.step(f"  [Google {len(results)}] {title[:60]}")
                 except Exception as e:
-                    slog.warn(f"  container[{idx}] extraction failed: {e}")
+                    slog.warn(f"[Google] Container extraction failed: {e}")
                     continue
 
-        if results:
-            slog.ok(f"Extracted {len(results)} results using strategy '{used_strategy}'")
-        else:
-            slog.warn("Zero results extracted — taking debug snapshot")
-            await _save_debug_screenshot(page, "zero_results")
-            await _dump_page_html(page, "zero_results")
-
-        execution_time = (datetime.now() - start_time).total_seconds()
-        slog.ok(f"Done in {execution_time:.2f}s")
-
-        response_obj = SearchResponse(
-            query=query,
-            results=results,
-            total_results=len(results),
-            execution_time=execution_time,
-            timestamp=datetime.now().isoformat(),
-        )
-        return response_obj.to_dict()
-
-    except Exception as e:
-        slog.error(f"Unexpected error: {e}")
-        import traceback
-        logger.debug(traceback.format_exc())
-        return {"error": f"Search failed: {e}", "query": query, "results": []}
+        if not results:
+            await _save_debug_screenshot(page, "google_zero_results")
+            await _dump_page_html(page, "google_zero_results")
 
     finally:
         if browser:
             await browser.close()
         if playwright_inst:
             await playwright_inst.stop()
-        slog.step("Browser closed")
+
+    return results
+
+
+# ─── Search (public API) ─────────────────────────────────────────────────────
+
+async def search(query: str, max_results: int = 5) -> Dict[str, Any]:
+    """
+    Search the web and return structured results.
+    Tries DuckDuckGo first (bot-friendly), falls back to Google.
+
+    Args:
+        query: Search query string
+        max_results: Maximum number of results (1-10)
+
+    Returns:
+        dict with keys: query, results, total_results, execution_time, timestamp
+        On error: dict with key 'error'
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        return {"error": "Playwright not installed. Run: pip install playwright && playwright install chromium"}
+
+    max_results = min(max(max_results, 1), 10)
+    slog = StepLogger("SEARCH")
+    slog.step(f"Query='{query}' max_results={max_results} stealth={'ON' if STEALTH_AVAILABLE else 'BASIC'}")
+    start_time = datetime.now()
+
+    results: List[SearchResult] = []
+
+    # 1. Try Bing (primary — reliable, minimal bot detection)
+    try:
+        slog.step("Attempting Bing (primary)...")
+        results = await _search_bing(query, max_results, slog)
+        if results:
+            slog.ok(f"Bing returned {len(results)} results")
+        else:
+            slog.warn("Bing returned 0 results — trying DuckDuckGo")
+    except Exception as e:
+        slog.warn(f"Bing failed: {e} — trying DuckDuckGo")
+
+    # 2. Fallback to DuckDuckGo
+    if not results:
+        try:
+            slog.step("Attempting DuckDuckGo (fallback)...")
+            results = await _search_duckduckgo(query, max_results, slog)
+            if results:
+                slog.ok(f"DuckDuckGo returned {len(results)} results")
+            else:
+                slog.warn("DuckDuckGo returned 0 results — trying Google")
+        except Exception as e:
+            slog.warn(f"DuckDuckGo failed: {e} — trying Google")
+
+    # 3. Last resort: Google
+    if not results:
+        try:
+            slog.step("Attempting Google (last resort)...")
+            results = await _search_google(query, max_results, slog)
+            if results:
+                slog.ok(f"Google returned {len(results)} results")
+            else:
+                slog.error("All search engines returned 0 results")
+        except Exception as e:
+            slog.error(f"Google fallback failed: {e}")
+            return {"error": f"All search engines failed. Last error: {e}", "query": query, "results": []}
+
+    execution_time = (datetime.now() - start_time).total_seconds()
+    slog.ok(f"Total time: {execution_time:.2f}s, results: {len(results)}")
+
+    return SearchResponse(
+        query=query,
+        results=results,
+        total_results=len(results),
+        execution_time=execution_time,
+        timestamp=datetime.now().isoformat(),
+    ).to_dict()
 
 
 # ─── Content Fetching ────────────────────────────────────────────────────────
@@ -588,54 +766,64 @@ def fetch_content_sync(url: str) -> Dict[str, Any]:
     return asyncio.run(fetch_content(url))
 
 
-# ─── Tool Definition for ADK ─────────────────────────────────────────────────
+# ─── ADK-Compatible Tool Functions ───────────────────────────────────────────
+# ADK builds the tool schema from type annotations + docstring.
+# These functions are designed to be passed directly to Agent(tools=[...])
+# via FunctionTool wrapping in agent_server.py.
 
-GOOGLE_SEARCH_TOOL_DEFINITION = {
-    "name": "google_search",
-    "description": "Search the web using Google. Returns titles, URLs, and snippets.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "Search query"},
-            "max_results": {"type": "integer", "default": 5, "minimum": 1, "maximum": 10},
-        },
-        "required": ["query"],
-    },
-}
+async def google_search(query: str, max_results: int = 5) -> str:
+    """Search the web for the given query using Bing/DuckDuckGo/Google.
 
-FETCH_CONTENT_TOOL_DEFINITION = {
-    "name": "fetch_webpage",
-    "description": "Fetch and extract main text content from a URL. Returns cleaned text for LLM.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "url": {"type": "string", "description": "URL to fetch"},
-        },
-        "required": ["url"],
-    },
-}
+    Returns a JSON string with keys:
+      - query: the original search query
+      - results: list of {position, title, url, snippet}
+      - total_results: number of results returned
+      - execution_time: seconds taken
+      - error: null on success, error message on failure
 
+    Args:
+        query: The search query string, e.g. 'latest AI news'
+        max_results: How many results to return (1-10, default 5)
+
+    Returns:
+        JSON string with search results
+    """
+    result = await search(query, max_results)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+async def fetch_webpage(url: str) -> str:
+    """Fetch and extract the main text content from a web page URL.
+
+    Strips HTML tags, ads, and navigation elements.
+    Returns a JSON string with keys:
+      - url: the fetched URL
+      - title: page title
+      - content: extracted plain text (up to 16,000 chars)
+      - content_length: character count of content
+      - execution_time: seconds taken
+      - error: null on success, error message on failure
+
+    Args:
+        url: The full URL to fetch, e.g. 'https://example.com/article'
+
+    Returns:
+        JSON string with extracted page content
+    """
+    result = await fetch_content(url)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ─── Legacy factory helpers (kept for backward compatibility) ─────────────────
 
 def create_google_search_tool(config: Optional[Dict] = None):
-    async def tool_impl(query: str, max_results: int = 5) -> str:
-        result = await search(query, max_results)
-        return json.dumps(result, ensure_ascii=False, indent=2)
-
-    tool_impl.name = "google_search"
-    tool_impl.description = GOOGLE_SEARCH_TOOL_DEFINITION["description"]
-    tool_impl.parameters = GOOGLE_SEARCH_TOOL_DEFINITION["parameters"]
-    return tool_impl
+    """Return the google_search function (pass to FunctionTool in agent_server)."""
+    return google_search
 
 
 def create_fetch_content_tool(config: Optional[Dict] = None):
-    async def tool_impl(url: str) -> str:
-        result = await fetch_content(url)
-        return json.dumps(result, ensure_ascii=False, indent=2)
-
-    tool_impl.name = "fetch_webpage"
-    tool_impl.description = FETCH_CONTENT_TOOL_DEFINITION["description"]
-    tool_impl.parameters = FETCH_CONTENT_TOOL_DEFINITION["parameters"]
-    return tool_impl
+    """Return the fetch_webpage function (pass to FunctionTool in agent_server)."""
+    return fetch_webpage
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────

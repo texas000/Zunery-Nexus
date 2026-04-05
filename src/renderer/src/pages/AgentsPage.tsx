@@ -1,18 +1,27 @@
-import React, { useState } from 'react'
-import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench, BookOpen, FileText, FilePlus, FileEdit, FileX, FolderOpen } from 'lucide-react'
 import { useStore, type Agent } from '../store'
 
 const PROVIDER_LABELS = { ollama: 'Ollama' }
 
-// Keep this in sync with src/main/tools.ts TOOL_CATALOG
-const TOOL_CATALOG = [
-  {
-    name: 'web_search',
-    label: 'Google Search',
-    description: 'Search Google for current information, news, and facts (via ADK)',
-    icon: Search,
-  },
-] as const
+// Icon map for dynamic tool catalog
+const ICON_MAP: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Search,
+  BookOpen,
+  FileText,
+  FilePlus,
+  FileEdit,
+  FileX,
+  FolderOpen,
+  Wrench,
+}
+
+interface ToolCatalogEntry {
+  name: string
+  label: string
+  description: string
+  icon: string
+}
 
 interface AgentFormData {
   name: string
@@ -40,12 +49,14 @@ function AgentModal({
   onClose,
   availableModels,
   defaultModel,
+  toolCatalog,
 }: {
   initial?: Agent
   onSave: (data: AgentFormData) => Promise<void>
   onClose: () => void
   availableModels: string[]
   defaultModel: string
+  toolCatalog: ToolCatalogEntry[]
 }) {
   const [form, setForm] = useState<AgentFormData>({
     name: initial?.name || '',
@@ -108,7 +119,7 @@ function AgentModal({
             <input
               value={form.description}
               onChange={(e) => update('description', e.target.value)}
-              placeholder="What this agent does…"
+              placeholder="What this agent does..."
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors"
             />
           </div>
@@ -141,7 +152,6 @@ function AgentModal({
                 <input
                   value={form.model}
                   onChange={(e) => update('model', e.target.value)}
-                  // placeholder="gemma3:latest"
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors"
                 />
               )}
@@ -154,7 +164,7 @@ function AgentModal({
             <textarea
               value={form.system_prompt}
               onChange={(e) => update('system_prompt', e.target.value)}
-              placeholder="You are a helpful assistant…"
+              placeholder="You are a helpful assistant..."
               rows={4}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors resize-none selectable"
             />
@@ -168,7 +178,8 @@ function AgentModal({
               <span className="text-[10px] text-zinc-600">Agent decides when to use them</span>
             </div>
             <div className="space-y-2">
-              {TOOL_CATALOG.map((tool) => {
+              {toolCatalog.map((tool) => {
+                const IconComp = ICON_MAP[tool.icon] || Wrench
                 const enabled = (() => {
                   try { return (JSON.parse(form.tools) as string[]).includes(tool.name) } catch { return false }
                 })()
@@ -195,7 +206,7 @@ function AgentModal({
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                       enabled ? 'bg-emerald-500/20' : 'bg-zinc-700/60'
                     }`}>
-                      <tool.icon size={13} className={enabled ? 'text-emerald-400' : 'text-zinc-500'} />
+                      <IconComp size={13} className={enabled ? 'text-emerald-400' : 'text-zinc-500'} />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{tool.label}</p>
@@ -250,7 +261,7 @@ function AgentModal({
               disabled={saving}
               className="flex-1 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm text-white font-medium transition-colors"
             >
-              {saving ? 'Saving…' : initial ? 'Save Changes' : 'Create Agent'}
+              {saving ? 'Saving...' : initial ? 'Save Changes' : 'Create Agent'}
             </button>
           </div>
         </form>
@@ -264,11 +275,13 @@ function AgentCard({
   onEdit,
   onDelete,
   onChat,
+  toolCatalog,
 }: {
   agent: Agent
   onEdit: () => void
   onDelete: () => void
   onChat: () => void
+  toolCatalog: ToolCatalogEntry[]
 }) {
   return (
     <div className="group relative bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-5 transition-all duration-200 animate-fade-in">
@@ -298,10 +311,11 @@ function AgentCard({
                 const tools: string[] = JSON.parse(agent.tools || '[]')
                 if (tools.length === 0) return null
                 return tools.map((t) => {
-                  const entry = TOOL_CATALOG.find((c) => c.name === t)
+                  const entry = toolCatalog.find((c) => c.name === t)
+                  const IconComp = entry ? (ICON_MAP[entry.icon] || Wrench) : Wrench
                   return (
                     <span key={t} className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {entry ? <entry.icon size={9} /> : <Wrench size={9} />}
+                      <IconComp size={9} />
                       {entry?.label || t}
                     </span>
                   )
@@ -345,7 +359,13 @@ export function AgentsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingAgent, setEditingAgent] = useState<Agent | undefined>()
   const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [toolCatalog, setToolCatalog] = useState<ToolCatalogEntry[]>([])
   const defaultModel = settings['default.model'] || 'gemma3:latest'
+
+  // Load active tool catalog
+  useEffect(() => {
+    window.api.tools.catalog().then(setToolCatalog).catch(() => {})
+  }, [settings])
 
   const loadModels = async () => {
     try {
@@ -460,6 +480,7 @@ export function AgentsPage() {
                 onEdit={() => handleOpenEdit(agent)}
                 onDelete={() => handleDelete(agent.id)}
                 onChat={() => handleChat(agent)}
+                toolCatalog={toolCatalog}
               />
             ))}
           </div>
@@ -473,6 +494,7 @@ export function AgentsPage() {
           onClose={() => setModalOpen(false)}
           availableModels={availableModels}
           defaultModel={defaultModel}
+          toolCatalog={toolCatalog}
         />
       )}
     </div>

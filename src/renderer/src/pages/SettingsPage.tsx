@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Save, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
+import { Save, RefreshCw, AlertCircle, CheckCircle, BookOpen, FolderOpen } from 'lucide-react'
 import { useStore } from '../store'
 
 function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
@@ -69,12 +69,15 @@ export function SettingsPage() {
     'ollama.baseUrl': 'http://localhost:11434',
     'default.model': 'gemma4:26b',
     'adk.enabled': 'true',
-    'adk.pythonPath': 'python3',
+    'adk.pythonPath': navigator.userAgent.includes('Windows') ? 'python' : 'python3',
     'theme': 'dark',
+    'obsidian.enabled': 'false',
+    'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
   })
 
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null)
   const [adkStatus, setAdkStatus] = useState<boolean | null>(null)
+  const [obsidianStatus, setObsidianStatus] = useState<{ ok: boolean; noteCount?: number } | null>(null)
   const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -89,6 +92,8 @@ export function SettingsPage() {
         'adk.enabled': settings['adk.enabled'] ?? f['adk.enabled'],
         'adk.pythonPath': settings['adk.pythonPath'] || f['adk.pythonPath'],
         'theme': settings['theme'] || f['theme'],
+        'obsidian.enabled': settings['obsidian.enabled'] ?? f['obsidian.enabled'],
+        'obsidian.vaultPath': settings['obsidian.vaultPath'] || f['obsidian.vaultPath'],
       }))
     }
   }, [settings])
@@ -118,10 +123,44 @@ export function SettingsPage() {
     setTesting(null)
   }
 
+  const checkObsidian = async () => {
+    setTesting('obsidian')
+    try {
+      const res = await fetch('http://127.0.0.1:7891/tools/obsidian/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vault_path: form['obsidian.vaultPath'], folder: '', recursive: false }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setObsidianStatus({ ok: false })
+      } else {
+        setObsidianStatus({ ok: true, noteCount: data.total || 0 })
+      }
+    } catch {
+      setObsidianStatus({ ok: false })
+    }
+    setTesting(null)
+  }
+
   const handleSave = async () => {
     setSaving(true)
     await window.api.settings.setMany(form)
     setSettings({ ...settings, ...form })
+
+    // If obsidian is enabled, configure the vault path on the ADK server
+    if (form['obsidian.enabled'] === 'true' && form['obsidian.vaultPath']) {
+      try {
+        await fetch('http://127.0.0.1:7891/tools/obsidian/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vault_path: form['obsidian.vaultPath'] }),
+        })
+      } catch {
+        // ADK server might not be running
+      }
+    }
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -133,7 +172,7 @@ export function SettingsPage() {
       <div className="flex items-center gap-4 px-6 py-4 border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
         <div>
           <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Settings</h1>
-          <p className="text-xs text-zinc-500">Configure your Ollama server and ADK integration</p>
+          <p className="text-xs text-zinc-500">Configure your Ollama server, ADK, and integrations</p>
         </div>
         <button
           onClick={handleSave}
@@ -143,7 +182,7 @@ export function SettingsPage() {
           {saved ? (
             <><CheckCircle size={13} /> Saved</>
           ) : (
-            <><Save size={13} /> {saving ? 'Saving…' : 'Save'}</>
+            <><Save size={13} /> {saving ? 'Saving...' : 'Save'}</>
           )}
         </button>
       </div>
@@ -211,11 +250,81 @@ export function SettingsPage() {
                       : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
                   }`}
                 >
-                  {t === 'dark' ? '🌙 Dark' : '☀️ Light'}
+                  {t === 'dark' ? 'Dark' : 'Light'}
                 </button>
               ))}
             </div>
           </Field>
+        </Section>
+
+        {/* Obsidian */}
+        <Section title="Obsidian" description="Knowledge management via your local Obsidian vault">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-zinc-800 dark:text-zinc-200 font-medium">Enable Obsidian Integration</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Enables search, read, create, update, and delete tools for all agents</p>
+            </div>
+            <div
+              onClick={() => update('obsidian.enabled', form['obsidian.enabled'] === 'true' ? 'false' : 'true')}
+              className={`relative w-10 h-5 rounded-full cursor-pointer transition-colors ${form['obsidian.enabled'] === 'true' ? 'bg-violet-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}
+            >
+              <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form['obsidian.enabled'] === 'true' ? 'translate-x-5' : ''}`} />
+            </div>
+          </div>
+
+          {form['obsidian.enabled'] === 'true' && (
+            <>
+              <Field label="Vault Path" hint="Full path to your Obsidian vault folder (iCloud sync supported)">
+                <Input
+                  value={form['obsidian.vaultPath']}
+                  onChange={(v) => update('obsidian.vaultPath', v)}
+                  placeholder="/Users/you/Documents/ObsidianVault/"
+                />
+              </Field>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={checkObsidian}
+                  disabled={testing === 'obsidian'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 transition-colors"
+                >
+                  <RefreshCw size={11} className={testing === 'obsidian' ? 'animate-spin' : ''} />
+                  Test Vault Connection
+                </button>
+                {obsidianStatus && (
+                  <StatusBadge
+                    ok={obsidianStatus.ok}
+                    label={obsidianStatus.ok ? `${obsidianStatus.noteCount} notes found` : 'Vault not accessible'}
+                  />
+                )}
+              </div>
+
+              <div className="rounded-xl bg-violet-500/5 border border-violet-500/20 p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <BookOpen size={13} className="text-violet-500" />
+                  <p className="text-xs font-medium text-violet-600 dark:text-violet-400">Available Tools (when enabled)</p>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { name: 'obsidian_search', desc: 'Full-text search with tags & links' },
+                    { name: 'obsidian_read', desc: 'Read note content & metadata' },
+                    { name: 'obsidian_create', desc: 'Create notes with auto-categorization' },
+                    { name: 'obsidian_update', desc: 'Update or append to notes' },
+                    { name: 'obsidian_delete', desc: 'Delete notes from vault' },
+                    { name: 'obsidian_list', desc: 'Browse vault structure' },
+                  ].map((t) => (
+                    <div key={t.name} className="flex items-start gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <FolderOpen size={10} className="mt-0.5 shrink-0 text-violet-400" />
+                      <div>
+                        <span className="font-mono text-violet-600 dark:text-violet-300">{t.name}</span>
+                        <span className="text-zinc-400 dark:text-zinc-600 ml-1">— {t.desc}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </Section>
 
         {/* Google ADK */}
@@ -233,8 +342,8 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <Field label="Python Executable Path" hint="Path to python3 binary. Must have google-adk installed.">
-            <Input value={form['adk.pythonPath']} onChange={(v) => update('adk.pythonPath', v)} placeholder="python3" />
+          <Field label="Python Executable Path" hint="Path to python executable. Must have google-adk installed.">
+            <Input value={form['adk.pythonPath']} onChange={(v) => update('adk.pythonPath', v)} placeholder={navigator.userAgent.includes('Windows') ? 'python' : 'python3'} />
           </Field>
 
           <div className="flex items-center gap-2">
