@@ -69,7 +69,7 @@ export function SettingsPage() {
     'ollama.baseUrl': 'http://localhost:11434',
     'default.model': 'gemma4:26b',
     'adk.enabled': 'true',
-    'adk.pythonPath': 'python3',
+    'adk.pythonPath': navigator.userAgent.includes('Windows') ? 'python' : 'python3',
     'theme': 'dark',
   })
 
@@ -233,8 +233,8 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <Field label="Python Executable Path" hint="Path to python3 binary. Must have google-adk installed.">
-            <Input value={form['adk.pythonPath']} onChange={(v) => update('adk.pythonPath', v)} placeholder="python3" />
+          <Field label="Python Executable Path" hint="Path to python executable. Must have google-adk installed.">
+            <Input value={form['adk.pythonPath']} onChange={(v) => update('adk.pythonPath', v)} placeholder={navigator.userAgent.includes('Windows') ? 'python' : 'python3'} />
           </Field>
 
           <div className="flex items-center gap-2">
