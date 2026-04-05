@@ -73,6 +73,7 @@ export function SettingsPage() {
     'theme': 'dark',
     'obsidian.enabled': 'false',
     'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
+    'orchestrator.prompt': '',
   })
 
   const [ollamaStatus, setOllamaStatus] = useState<boolean | null>(null)
@@ -94,6 +95,7 @@ export function SettingsPage() {
         'theme': settings['theme'] || f['theme'],
         'obsidian.enabled': settings['obsidian.enabled'] ?? f['obsidian.enabled'],
         'obsidian.vaultPath': settings['obsidian.vaultPath'] || f['obsidian.vaultPath'],
+        'orchestrator.prompt': settings['orchestrator.prompt'] || f['orchestrator.prompt'],
       }))
     }
   }, [settings])
@@ -233,6 +235,18 @@ export function SettingsPage() {
         <Section title="Global Model" description="Used by all agents and the orchestrator">
           <Field label="Model" hint="All agents will use this model. Click a model from the list above to select it.">
             <Input value={form['default.model']} onChange={(v) => update('default.model', v)} placeholder="e.g. llama3.2:latest" />
+          </Field>
+        </Section>
+
+        {/* Orchestrator */}
+        <Section title="Orchestrator Settings" description="Configure the global routing orchestrator behavior">
+          <Field label="System Prompt" hint="This prompt routes messages to the right agent. Keep {{AGENT_LIST}} and {{CONTENT}} tags!">
+            <textarea
+              value={form['orchestrator.prompt']}
+              onChange={(e) => update('orchestrator.prompt', e.target.value)}
+              placeholder="You are a routing orchestrator..."
+              className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors selectable min-h-[300px] resize-y font-mono"
+            />
           </Field>
         </Section>
 

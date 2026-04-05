@@ -34,6 +34,7 @@ export async function startAdkServer(pythonPath = process.platform === 'win32' ?
     adkProcess = spawn(pythonPath, [script, '--port', String(ADK_PORT)], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
+      shell: process.platform === 'win32',
     })
 
     let started = false
@@ -136,5 +137,24 @@ export async function getAdkStatus(): Promise<{ running: boolean; version?: stri
     return { running: true, version: res.data.version }
   } catch {
     return { running: false }
+  }
+}
+
+export async function runAdkOrchestrator(
+  sessionId: string,
+  message: string,
+  systemPrompt: string,
+  modelConfig: { provider: string; model: string; baseUrl: string }
+): Promise<{ ok: boolean; content?: string; error?: string }> {
+  try {
+    const res = await axios.post(
+      `${ADK_BASE}/orchestrate`,
+      { session_id: sessionId, message, system_prompt: systemPrompt, model_config: modelConfig },
+      { timeout: 120000 }
+    )
+    return { ok: true, content: res.data.content }
+  } catch (err: unknown) {
+    const e = err as { message?: string; response?: { data?: { error?: string } } }
+    return { ok: false, error: e.response?.data?.error || e.message }
   }
 }

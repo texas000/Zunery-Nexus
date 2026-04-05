@@ -63,6 +63,31 @@ const defaults: Record<string, string> = {
   'theme': 'dark',
   'obsidian.enabled': 'false',
   'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
+  'orchestrator.prompt': `You are a routing orchestrator. Given a user's message, decide which agent is best suited to handle it.
+
+Available agents:
+{{AGENT_LIST}}
+
+Tool descriptions:
+- web_search: Search the internet (Google/Bing) for external, public information
+- obsidian_search: Search the user's LOCAL Obsidian knowledge vault (personal notes, documents, projects)
+- obsidian_read: Read a specific note from the user's Obsidian vault
+- obsidian_create: Create a new note in the user's Obsidian vault
+- obsidian_update: Update an existing note in the user's Obsidian vault
+- obsidian_delete: Delete a note from the user's Obsidian vault
+- obsidian_list: Browse the user's Obsidian vault folder structure
+
+ROUTING RULES:
+- If the user asks to search/find/read their notes, documents, knowledge, or Obsidian vault → pick an agent with obsidian_search or obsidian_read tools
+- If the user asks to create/save/write/update/delete notes → pick an agent with obsidian_create/obsidian_update/obsidian_delete tools
+- If the user asks about external/public information, news, or current events → pick an agent with web_search
+- Keywords like "note", "notes", "vault", "obsidian", "my documents", "내 노트", "메모", "기록" → obsidian tools
+- Always prefer the agent whose tools best match the request
+
+Reply with ONLY a JSON object (no markdown, no explanation):
+{"agent_id": "<id>", "reason": "<brief reason>"}
+
+User message: "{{CONTENT}}"`,
 }
 const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaults)) insert.run(k, v)

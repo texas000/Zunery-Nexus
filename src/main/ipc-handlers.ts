@@ -7,7 +7,7 @@ import {
   listOllamaModels,
   type ChatEvent,
 } from './llm-client'
-import { registerAdkAgent, runAdkAgent, getAdkStatus, isAdkReady } from './adk-bridge'
+import { registerAdkAgent, runAdkAgent, getAdkStatus, isAdkReady, runAdkOrchestrator } from './adk-bridge'
 import { getActiveToolDefinitions, getActiveToolCatalog, executeToolCall } from './tools'
 
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
@@ -172,7 +172,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       try {
         if (isAdkReady()) {
           // Always use Google ADK when available
-          log_chat('[chat:send] Using ADK for agent', agentId)
+          console.log('[chat:send] Using ADK for agent', agentId)
           // Ensure agent is registered before running
           await registerAdkAgent({
             id: agent.id,
@@ -308,9 +308,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       event,
       params: { content: string; useAdk: boolean }
     ) => {
-      const { content, useAdk } = params
+      const { content } = params
       const settings = db.getSettings()
       const agents = db.getAgents()
+      const useAdk = settings['adk.enabled'] !== 'false' && isAdkReady()
 
       const log = (type: string, label: string, logContent: string, extra?: Record<string, string>) => {
         const entry = { type, label, content: logContent, ts: Date.now(), ...extra }
@@ -323,30 +324,59 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       if (agents.length === 0) throw new Error('No agents available. Create at least one agent first.')
 
-      // ── Obsidian pre-fetch: orchestrator gathers vault context before agent ──
-      const obsidianEnabled = settings['obsidian.enabled'] === 'true'
-      let obsidianContext = ''
+      // --- MEGA AGENT ADK ORCHESTRATOR ---
+      if (useAdk) {
+        log('orchestrator', 'Using ADK Orchestrator', 'Routing delegated to Google ADK mega-agent defined in python server')
+        const systemPrompt = settings['orchestrator.prompt'] || 'You are a highly capable orchestrator agent.'
+        const effectiveModel = settings['default.model'] || agents[0]?.model || 'gemma4:26b'
+        const ollamaBase = settings['ollama.baseUrl'] || 'http://localhost:11434'
 
+        event.sender.send('chat:agent-routing', {
+          agentId: 'orchestrator_mega_agent',
+          agentName: 'ADK Orchestrator',
+          reason: 'Executing natively in Python ADK via Agent function',
+        })
+
+        event.sender.send('chat:orchestrator-thinking', { content: '', done: true })
+
+        const assistantMsgId = randomUUID()
+        const modelConfig = {
+          provider: 'ollama',
+          model: effectiveModel,
+          baseUrl: ollamaBase,
+        }
+
+        const result = await runAdkOrchestrator(randomUUID(), content, systemPrompt, modelConfig)
+
+        if (result.ok && result.content) {
+          event.sender.send('chat:chunk', { id: assistantMsgId, content: result.content, done: true })
+          return { content: result.content, metadata: '{}', agentId: 'orchestrator_mega_agent', agentName: 'ADK Orchestrator' }
+        } else {
+          log('error', 'ADK run failed', String(result.error))
+          throw new Error(result.error || 'Google ADK execution failed')
+        }
+      }
+
+      // --- LEGACY OLLAMA ROUTING FALLBACK ---
+      let obsidianContext = ''
       let fallbackToWeb = false
 
-      if (obsidianEnabled) {
-        // Step 1: Always search Obsidian first when enabled
-        log('obsidian-prefetch', 'Obsidian search', `Searching vault: "${content.slice(0, 80)}"`)
+      // Step 1: Pre-fetch Obsidian context if possible
+      if (settings['obsidian.enabled'] === 'true') {
+        log('obsidian-prefetch', 'Searching vault', `Query: "${content.slice(0, 80)}"`)
         event.sender.send('chat:tool-call', { id: 'orchestrator', toolName: 'obsidian_search', args: { query: content } })
 
         try {
-          const searchResult = await executeToolCall('obsidian_search', { query: content, max_results: '5' })
+          const searchResult = await executeToolCall('obsidian_search', { query: content })
           event.sender.send('chat:tool-result', { id: 'orchestrator', toolName: 'obsidian_search', result: searchResult })
 
-          const hasResults = searchResult
-            && !searchResult.startsWith('No notes found')
-            && !searchResult.startsWith('Obsidian error')
-            && !searchResult.startsWith('Obsidian tool unavailable')
+          const hasObsidianResults = searchResult
+            && !searchResult.startsWith('No results found')
+            && !searchResult.startsWith('No search query')
+            && !searchResult.startsWith('Tool error')
 
-          if (hasResults) {
-            // Obsidian found results — use them
+          if (hasObsidianResults) {
             obsidianContext = searchResult
-            log('obsidian-prefetch', 'Obsidian results', searchResult.length > 400 ? searchResult.slice(0, 400) + '…' : searchResult)
 
             // Pre-read the top matching note for richer context
             const pathMatch = searchResult.match(/\(([^)]+\.md)\)/)
@@ -368,7 +398,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
               }
             }
           } else {
-            // Step 2: No Obsidian results — fallback to web search
             log('obsidian-prefetch', 'No vault results', 'Falling back to web search')
             fallbackToWeb = true
           }
@@ -419,7 +448,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           reason: 'Only available agent',
         })
 
-        // Stream response from the single agent with enriched content
         return await streamFromAgent(event, agent, enrichedContent, settings, useAdk, log, !!obsidianContext)
       }
 
@@ -434,10 +462,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         })
         .join('\n')
 
-      const routingPrompt = `You are a routing orchestrator. Given a user's message, decide which agent is best suited to handle it.
+      let promptTemplate = settings['orchestrator.prompt'] || `You are a routing orchestrator. Given a user's message, decide which agent is best suited to handle it.
 
 Available agents:
-${agentList}
+{{AGENT_LIST}}
 
 Tool descriptions:
 - web_search: Search the internet (Google/Bing) for external, public information
@@ -458,9 +486,12 @@ ROUTING RULES:
 Reply with ONLY a JSON object (no markdown, no explanation):
 {"agent_id": "<id>", "reason": "<brief reason>"}
 
-User message: "${content}"`
+User message: "{{CONTENT}}"`
 
-      // Use the global model setting for routing, fall back to first agent's model
+      const routingPrompt = promptTemplate
+        .replace('{{AGENT_LIST}}', agentList)
+        .replace('{{CONTENT}}', content)
+
       const routerAgent = agents[0]
       const model = settings['default.model'] || routerAgent.model
       const ollamaBase = settings['ollama.baseUrl'] || 'http://localhost:11434'
@@ -480,7 +511,6 @@ User message: "${content}"`
           if (chunk.done) break
         }
       } catch (err: unknown) {
-        // Fallback to first agent if routing fails
         const agent = agents[0]
         log('error', 'Routing failed', String((err as Error).message || err))
         event.sender.send('chat:orchestrator-thinking', { content: '', done: true })
@@ -494,11 +524,9 @@ User message: "${content}"`
 
       log('llm-response', 'Routing response', routingResponse)
 
-      // Parse routing decision
       let chosenAgentId = agents[0].id
       let reason = 'Default selection'
       try {
-        // Extract JSON from response (handle markdown code blocks)
         const jsonMatch = routingResponse.match(/\{[\s\S]*?\}/)
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0])
@@ -514,14 +542,12 @@ User message: "${content}"`
       const chosenAgent = agents.find((a) => a.id === chosenAgentId) || agents[0]
       log('routing', 'Agent selected', `${chosenAgent.name} — ${reason}`, { agent: chosenAgent.name })
 
-      // Notify frontend which agent was selected
       event.sender.send('chat:agent-routing', {
         agentId: chosenAgent.id,
         agentName: chosenAgent.name,
         reason,
       })
 
-      // Stream response from chosen agent with enriched content
       return await streamFromAgent(event, chosenAgent, enrichedContent, settings, useAdk, log, !!obsidianContext)
     }
   )

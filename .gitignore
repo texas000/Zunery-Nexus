@@ -12,6 +12,7 @@ node_modules
 dist
 out
 *.tsbuildinfo
+*/__pycache__
 
 # Editor directories and files
 .vscode/*

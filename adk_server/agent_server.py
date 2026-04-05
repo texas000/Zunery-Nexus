@@ -485,6 +485,75 @@ class AdkHandler(BaseHTTPRequestHandler):
                 log(f"Run error: {e}")
                 json_response(self, 500, {"error": str(e)})
 
+        elif path == "/orchestrate":
+            data = read_body(self)
+            session_id = data.get("session_id", "default")
+            message = data.get("message", "")
+            system_prompt = data.get("system_prompt", "You are an orchestrator.")
+            model_config = data.get("model_config", {
+                "provider": "ollama",
+                "model": "gemma4:26b",
+                "baseUrl": "http://localhost:11434"
+            })
+
+            if not ADK_AVAILABLE:
+                json_response(self, 503, {"error": "Google ADK is not available"})
+                return
+
+            try:
+                # 1. List out all available tools
+                all_tools = []
+                # if google_search_tool is not None:
+                    # all_tools.append(google_search_tool)
+                    
+                if custom_search_tool is not None:
+                    all_tools.append(custom_search_tool)
+                
+                if fetch_content_tool is not None:
+                    all_tools.append(fetch_content_tool)
+
+                for name, ot in _obsidian_tools.items():
+                    all_tools.append(ot)
+
+                model = build_model(model_config)
+
+                # 2. Define the Orchestrator explicitely using Agent
+                try:
+                    from google.adk.agents import Agent
+                    orchestrator_agent = Agent(
+                        name="orchestrator",
+                        model=model,
+                        instruction=system_prompt,
+                        tools=all_tools
+                    )
+                except ImportError:
+                    # Fallback to older package structure
+                    from google.adk.agent import Agent
+                    orchestrator_agent = Agent(
+                        name="orchestrator",
+                        model=model,
+                        instruction=system_prompt,
+                        tools=all_tools
+                    )
+
+                # 3. Run it
+                mock_config = {
+                    "id": "orchestrator",
+                    "name": "orchestrator",
+                    "_adk_instance": orchestrator_agent
+                }
+
+                loop = asyncio.new_event_loop()
+                content = loop.run_until_complete(
+                    run_agent_async(mock_config, session_id, message, [])
+                )
+                loop.close()
+                json_response(self, 200, {"ok": True, "content": content})
+            except Exception as e:
+                log(f"Orchestrate error: {e}")
+                traceback.print_exc()
+                json_response(self, 500, {"error": str(e)})
+
         else:
             json_response(self, 404, {"error": "Not found"})
 

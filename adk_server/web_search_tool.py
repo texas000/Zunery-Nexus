@@ -158,7 +158,7 @@ class StepLogger:
 
 # ─── Debug Helpers ────────────────────────────────────────────────────────────
 
-async def _save_debug_screenshot(page: Page, name: str):
+async def _save_debug_screenshot(page: "Page", name: str):
     """Save a screenshot to help debug selector issues."""
     if not DEBUG_MODE:
         return
@@ -171,7 +171,7 @@ async def _save_debug_screenshot(page: Page, name: str):
         logger.debug(f"[DEBUG] Screenshot failed: {e}")
 
 
-async def _dump_page_html(page: Page, name: str):
+async def _dump_page_html(page: "Page", name: str):
     """Dump page HTML snapshot for selector debugging."""
     if not DEBUG_MODE:
         return
@@ -215,7 +215,7 @@ async def create_stealth_browser():
     return browser, playwright
 
 
-async def apply_stealth(page: Page):
+async def apply_stealth(page: "Page"):
     """Apply stealth mode to a page (supports v1 and v2 API)."""
     if STEALTH_AVAILABLE:
         try:
