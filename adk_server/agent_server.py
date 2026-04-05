@@ -20,7 +20,9 @@ ADK_AVAILABLE = False
 LiteLlm = None
 Runner = None
 InMemorySessionService = None
+google_search_tool = None
 
+# Try Google's built-in search tool first
 try:
     from google.adk.agents import Agent
     from google.adk.models.lite_llm import LiteLlm
@@ -28,6 +30,11 @@ try:
     from google.adk.sessions import InMemorySessionService
     from google.genai import types as genai_types
     ADK_AVAILABLE = True
+    try:
+        from google.adk.tools import google_search as _google_search
+        google_search_tool = _google_search
+    except ImportError:
+        pass
 except ImportError:
     try:
         # Older ADK package structure
@@ -36,8 +43,23 @@ except ImportError:
         from google.adk.runner import Runner
         from google.adk.session import InMemorySessionService
         ADK_AVAILABLE = True
+        try:
+            from google.adk.tools import google_search as _google_search
+            google_search_tool = _google_search
+        except ImportError:
+            pass
     except ImportError:
         pass
+
+# ─── Custom Web Search Tool (Playwright-based) ───────────────────────────────
+
+custom_search_tool = None
+try:
+    from web_search_tool import create_google_search_tool, create_fetch_content_tool
+    custom_search_tool = create_google_search_tool()
+    fetch_content_tool = create_fetch_content_tool()
+except ImportError:
+    pass
 
 # ─── State ───────────────────────────────────────────────────────────────────
 
@@ -83,25 +105,15 @@ def build_model(config: dict):
         return None
 
     provider = config.get("provider", "ollama")
-    model_name = config.get("model", "gemma3:latest")
+    model_name = config.get("model", "gemma4:26b")
     base_url = config.get("baseUrl", "http://localhost:11434")
     api_key = config.get("apiKey", "dummy")
 
-    if provider == "ollama":
-        # LiteLLM ollama format
-        return LiteLlm(
-            model=f"ollama/{model_name}",
-            api_base=base_url,
-        )
-    elif provider == "litellm":
-        # OpenAI-compatible via LiteLLM
-        return LiteLlm(
-            model=f"openai/{model_name}",
-            api_base=base_url,
-            api_key=api_key or "dummy",
-        )
-    else:
-        return LiteLlm(model=model_name)
+    # Ollama via ADK's LiteLlm adapter
+    return LiteLlm(
+        model=f"ollama/{model_name}",
+        api_base=base_url,
+    )
 
 
 def build_adk_agent(config: dict):
@@ -113,12 +125,33 @@ def build_adk_agent(config: dict):
     if model is None:
         return None
 
+    # Build tools list from agent config
+    agent_tools = []
+    tool_names = config.get("tools", [])
+
+    if "web_search" in tool_names:
+        # Prefer Google's built-in search tool, fallback to custom Playwright-based tool
+        if google_search_tool is not None:
+            agent_tools.append(google_search_tool)
+            log(f"Agent '{config.get('name')}' — google_search tool enabled (Google ADK)")
+        elif custom_search_tool is not None:
+            agent_tools.append(custom_search_tool)
+            log(f"Agent '{config.get('name')}' — google_search tool enabled (Playwright)")
+        else:
+            log(f"Agent '{config.get('name')}' — web_search requested but no search tool available")
+
+    if "fetch_content" in tool_names and fetch_content_tool is not None:
+        agent_tools.append(fetch_content_tool)
+        log(f"Agent '{config.get('name')}' — fetch_content tool enabled")
+
     kwargs = {
         "name": config.get("name", "agent").replace(" ", "_").lower(),
         "model": model,
         "description": config.get("description", "A helpful assistant"),
         "instruction": config.get("system_prompt", "You are a helpful assistant."),
     }
+    if agent_tools:
+        kwargs["tools"] = agent_tools
 
     try:
         return Agent(**kwargs)
@@ -193,13 +226,11 @@ async def run_agent_async(agent_config: dict, session_id: str, message: str, his
 
 
 def run_agent_fallback(agent_config: dict, message: str) -> str:
-    """Fallback: call LiteLLM directly if ADK is unavailable."""
+    """Fallback: call Ollama directly via HTTP if ADK is unavailable."""
     try:
-        import litellm
-        provider = agent_config.get("provider", "ollama")
-        model = agent_config.get("model", "gemma3:latest")
-        base_url = agent_config.get("baseUrl", "http://localhost:11434")
-        api_key = agent_config.get("apiKey", "dummy")
+        import urllib.request
+        model = agent_config.get("model", "gemma4:26b")
+        base_url = agent_config.get("baseUrl", "http://localhost:11434").rstrip("/")
         system_prompt = agent_config.get("system_prompt", "")
 
         messages = []
@@ -207,20 +238,16 @@ def run_agent_fallback(agent_config: dict, message: str) -> str:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": message})
 
-        if provider == "ollama":
-            resp = litellm.completion(
-                model=f"ollama/{model}",
-                messages=messages,
-                api_base=base_url,
-            )
-        else:
-            resp = litellm.completion(
-                model=f"openai/{model}",
-                messages=messages,
-                api_base=base_url,
-                api_key=api_key or "dummy",
-            )
-        return resp.choices[0].message.content or ""
+        payload = json.dumps({"model": model, "messages": messages, "stream": False}).encode()
+        req = urllib.request.Request(
+            f"{base_url}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+        return data.get("message", {}).get("content", "") or ""
     except Exception as e:
         return f"Error: {e}"
 
@@ -311,7 +338,8 @@ def main():
 
     server = HTTPServer(("127.0.0.1", args.port), AdkHandler)
 
-    log(f"Starting on port {args.port} (ADK: {'available' if ADK_AVAILABLE else 'not installed'})")
+    search_status = "available (Google ADK)" if google_search_tool else ("available (Playwright)" if custom_search_tool else "not available")
+    log(f"Starting on port {args.port} (ADK: {'available' if ADK_AVAILABLE else 'not installed'}, google_search: {search_status})")
 
     # Signal ready to Electron
     print("ADK_READY", flush=True)

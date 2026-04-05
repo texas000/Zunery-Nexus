@@ -7,7 +7,7 @@ export interface Agent {
   model: string
   system_prompt: string
   temperature: number
-  provider: 'ollama' | 'litellm'
+  provider: 'ollama'
   tools: string
   created_at: string
   updated_at: string
@@ -59,13 +59,19 @@ export interface API {
       content: string
       useAdk: boolean
     }) => Promise<{ userMessage: Message; assistantMessage: Message }>
+    orchestrate: (params: { content: string; useAdk: boolean }) => Promise<{
+      content: string; metadata: string; agentId: string; agentName: string
+    }>
     onChunk: (callback: (chunk: { id: string; content: string; done: boolean }) => void) => () => void
     onToolCall: (callback: (ev: { id: string; toolName: string; args: Record<string, unknown> }) => void) => () => void
     onToolResult: (callback: (ev: { id: string; toolName: string; result: string }) => void) => () => void
+    onAgentRouting: (callback: (ev: { agentId: string; agentName: string; reason: string }) => void) => () => void
+    onOrchestratorThinking: (callback: (chunk: { content: string; done: boolean }) => void) => () => void
+    onOrchestratorLog: (callback: (entry: { type: string; label: string; content: string; ts: number; model?: string; agent?: string }) => void) => () => void
+    onError: (callback: (ev: { id: string; error: string }) => void) => () => void
   }
   models: {
     listOllama: (baseUrl?: string) => Promise<string[]>
-    listLiteLLM: (baseUrl?: string, apiKey?: string) => Promise<string[]>
   }
   adk: {
     status: () => Promise<{ running: boolean; version?: string }>

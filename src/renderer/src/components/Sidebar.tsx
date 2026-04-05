@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Zap,
   ZapOff,
+  Network,
 } from 'lucide-react'
 import { useStore, type Conversation } from '../store'
 
@@ -29,14 +30,14 @@ function NavItem({
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 no-drag ${
         active
-          ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
-          : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200 border border-transparent'
+          ? 'bg-indigo-600/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30'
+          : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-200 border border-transparent'
       }`}
     >
       <Icon size={16} className="shrink-0" />
       <span className="flex-1 text-left">{label}</span>
       {badge && (
-        <span className="text-xs bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full">{badge}</span>
+        <span className="text-xs bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-full">{badge}</span>
       )}
     </button>
   )
@@ -56,7 +57,9 @@ function ConversationItem({
   return (
     <div
       className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 no-drag ${
-        active ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'
+        active
+          ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
+          : 'text-zinc-500 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 hover:text-zinc-700 dark:hover:text-zinc-300'
       }`}
       onClick={onClick}
     >
@@ -67,7 +70,7 @@ function ConversationItem({
           e.stopPropagation()
           onDelete()
         }}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-red-400 no-drag"
+        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-red-500 dark:hover:text-red-400 no-drag"
       >
         <Trash2 size={11} />
       </button>
@@ -117,28 +120,29 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col h-full w-64 bg-zinc-950 border-r border-zinc-800/60 select-none shrink-0">
+    <aside className="flex flex-col h-full w-64 bg-zinc-100 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800/60 select-none shrink-0">
       {/* Titlebar drag region + logo */}
-      <div className="drag-region h-12 flex items-center px-4 border-b border-zinc-800/60 shrink-0 mt-6.5">
+      <div className="drag-region h-12 flex items-center px-4 border-b border-zinc-200 dark:border-zinc-800/60 shrink-0 mt-6.5">
         <div className="no-drag flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
             <Bot size={14} className="text-white" />
           </div>
-          <span className="font-semibold text-sm text-zinc-100">Zunery Nexus</span>
+          <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">Zunery Nexus</span>
         </div>
 
         {/* ADK status */}
         <div className="no-drag ml-auto flex items-center gap-1.5">
           {adkRunning ? (
-            <Zap size={12} className="text-emerald-400" title="ADK running" />
+            <Zap size={12} className="text-emerald-500 dark:text-emerald-400" title="ADK running" />
           ) : (
-            <ZapOff size={12} className="text-zinc-600" title="ADK offline" />
+            <ZapOff size={12} className="text-zinc-400 dark:text-zinc-600" title="ADK offline" />
           )}
         </div>
       </div>
 
       {/* Navigation */}
-      <div className="p-3 space-y-1 border-b border-zinc-800/60 shrink-0">
+      <div className="p-3 space-y-1 border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
+        <NavItem icon={Network} label="Home" active={view === 'home'} onClick={() => setView('home')} />
         <NavItem icon={MessageSquare} label="Chat" active={view === 'chat'} onClick={() => setView('chat')} />
         <NavItem
           icon={Bot}
@@ -152,13 +156,13 @@ export function Sidebar() {
 
       {/* Agent picker */}
       {view === 'chat' && (
-        <div className="p-3 border-b border-zinc-800/60 shrink-0">
+        <div className="p-3 border-b border-zinc-200 dark:border-zinc-800/60 shrink-0">
           <p className="text-xs text-zinc-500 font-medium mb-2 px-1">AGENT</p>
           <div className="space-y-1">
             {agents.length === 0 ? (
               <button
                 onClick={() => setView('agents')}
-                className="w-full text-left text-xs text-zinc-500 hover:text-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-800/50 transition-colors no-drag"
+                className="w-full text-left text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 px-3 py-2 rounded-lg hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 transition-colors no-drag"
               >
                 + Create your first agent
               </button>
@@ -169,12 +173,12 @@ export function Sidebar() {
                   onClick={() => { setActiveAgent(agent.id); setView('chat') }}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all no-drag ${
                     activeAgentId === agent.id
-                      ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30'
-                      : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200 border border-transparent'
+                      ? 'bg-indigo-600/20 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200 border border-transparent'
                   }`}
                 >
                   <div className="w-5 h-5 rounded-md bg-gradient-to-br from-violet-500/30 to-indigo-500/30 flex items-center justify-center shrink-0">
-                    <Bot size={10} />
+                    <Bot size={10} className="text-indigo-500 dark:text-indigo-300" />
                   </div>
                   <span className="truncate">{agent.name}</span>
                   {activeAgentId === agent.id && <ChevronRight size={10} className="ml-auto shrink-0" />}
@@ -192,7 +196,7 @@ export function Sidebar() {
             <p className="text-xs text-zinc-500 font-medium">CONVERSATIONS</p>
             <button
               onClick={handleNewConversation}
-              className="no-drag p-1 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="no-drag p-1 rounded-md text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
               title="New conversation"
             >
               <Plus size={13} />
@@ -202,7 +206,7 @@ export function Sidebar() {
           {conversations.length === 0 ? (
             <button
               onClick={handleNewConversation}
-              className="w-full text-xs text-zinc-600 hover:text-zinc-400 px-3 py-2 rounded-lg hover:bg-zinc-800/40 transition-colors no-drag text-left"
+              className="w-full text-xs text-zinc-400 dark:text-zinc-600 hover:text-zinc-600 dark:hover:text-zinc-400 px-3 py-2 rounded-lg hover:bg-zinc-200/40 dark:hover:bg-zinc-800/40 transition-colors no-drag text-left"
             >
               + Start a conversation
             </button>
@@ -223,14 +227,14 @@ export function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="p-3 border-t border-zinc-800/60 mt-auto shrink-0">
+      <div className="p-3 border-t border-zinc-200 dark:border-zinc-800/60 mt-auto shrink-0">
         {activeAgent && view === 'chat' && (
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800">
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
             <div className="w-5 h-5 rounded bg-gradient-to-br from-violet-500/40 to-indigo-500/40 flex items-center justify-center shrink-0">
-              <Bot size={10} className="text-indigo-300" />
+              <Bot size={10} className="text-indigo-500 dark:text-indigo-300" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-zinc-200 truncate">{activeAgent.name}</p>
+              <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">{activeAgent.name}</p>
               <p className="text-[10px] text-zinc-500 truncate">{activeAgent.model}</p>
             </div>
           </div>

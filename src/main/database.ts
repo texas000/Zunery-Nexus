@@ -24,7 +24,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
-    model TEXT NOT NULL DEFAULT 'gemma3:latest',
+    model TEXT NOT NULL DEFAULT 'gemma4:26b',
     system_prompt TEXT DEFAULT '',
     temperature REAL DEFAULT 0.7,
     provider TEXT DEFAULT 'ollama',
@@ -57,11 +57,10 @@ db.exec(`
 const defaults: Record<string, string> = {
   provider: 'ollama',
   'ollama.baseUrl': 'http://localhost:11434',
-  'litellm.baseUrl': 'http://localhost:4000',
-  'litellm.apiKey': '',
-  'default.model': 'gemma3:latest',
+  'default.model': 'gemma4:26b',
   'adk.enabled': 'true',
   'adk.pythonPath': 'python3',
+  'theme': 'dark',
 }
 const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')
 for (const [k, v] of Object.entries(defaults)) insert.run(k, v)

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type View = 'chat' | 'agents' | 'settings'
+export type View = 'home' | 'chat' | 'agents' | 'settings'
 
 export interface Agent {
   id: string
@@ -9,7 +9,7 @@ export interface Agent {
   model: string
   system_prompt: string
   temperature: number
-  provider: 'ollama' | 'litellm'
+  provider: 'ollama'
   tools: string
   created_at: string
   updated_at: string
@@ -39,6 +39,27 @@ export interface ToolEvent {
   status: 'calling' | 'done'
 }
 
+export interface OrchestratorLogEntry {
+  type: string
+  label: string
+  content: string
+  ts: number
+  model?: string
+  agent?: string
+}
+
+export interface OrchestratorMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  routedAgentId?: string | null
+  routedAgentName?: string | null
+  routingReason?: string | null
+  thinking?: string | null
+  log?: OrchestratorLogEntry[]
+  metadata?: string
+}
+
 interface AppState {
   view: View
   agents: Agent[]
@@ -53,6 +74,14 @@ interface AppState {
   adkRunning: boolean
   useAdk: boolean
   settings: Record<string, string>
+
+  // Orchestrator state
+  orchestratorMessages: OrchestratorMessage[]
+  orchestratorRouting: { agentId: string; agentName: string; reason?: string } | null
+  orchestratorStreaming: boolean
+  orchestratorStreamingContent: string
+  orchestratorThinkingContent: string
+  orchestratorCurrentLog: OrchestratorLogEntry[]
 
   setView: (v: View) => void
   setAgents: (agents: Agent[]) => void
@@ -77,10 +106,20 @@ interface AppState {
   setUseAdk: (v: boolean) => void
   setSettings: (s: Record<string, string>) => void
   updateSetting: (key: string, value: string) => void
+
+  // Orchestrator actions
+  addOrchestratorMessage: (msg: OrchestratorMessage) => void
+  setOrchestratorRouting: (routing: { agentId: string; agentName: string; reason?: string } | null) => void
+  setOrchestratorStreaming: (v: boolean) => void
+  appendOrchestratorChunk: (chunk: string) => void
+  appendOrchestratorThinking: (chunk: string) => void
+  addOrchestratorLog: (entry: OrchestratorLogEntry) => void
+  finalizeOrchestratorResponse: (msg: Omit<OrchestratorMessage, 'thinking' | 'log'>) => void
+  clearOrchestrator: () => void
 }
 
 export const useStore = create<AppState>((set) => ({
-  view: 'chat',
+  view: 'home',
   agents: [],
   conversations: [],
   messages: [],
@@ -91,8 +130,16 @@ export const useStore = create<AppState>((set) => ({
   streamingToolEvents: [],
   isStreaming: false,
   adkRunning: false,
-  useAdk: false,
+  useAdk: true,
   settings: {},
+
+  // Orchestrator state
+  orchestratorMessages: [],
+  orchestratorRouting: null,
+  orchestratorStreaming: false,
+  orchestratorStreamingContent: '',
+  orchestratorThinkingContent: '',
+  orchestratorCurrentLog: [],
 
   setView: (v) => set({ view: v }),
   setAgents: (agents) => set({ agents }),
@@ -144,4 +191,40 @@ export const useStore = create<AppState>((set) => ({
   setUseAdk: (v) => set({ useAdk: v }),
   setSettings: (settings) => set({ settings }),
   updateSetting: (key, value) => set((s) => ({ settings: { ...s.settings, [key]: value } })),
+
+  // Orchestrator actions
+  addOrchestratorMessage: (msg) =>
+    set((s) => ({ orchestratorMessages: [...s.orchestratorMessages, msg] })),
+  setOrchestratorRouting: (routing) => set({ orchestratorRouting: routing }),
+  setOrchestratorStreaming: (v) =>
+    set({ orchestratorStreaming: v, orchestratorStreamingContent: v ? '' : '' }),
+  appendOrchestratorChunk: (chunk) =>
+    set((s) => ({ orchestratorStreamingContent: s.orchestratorStreamingContent + chunk })),
+  appendOrchestratorThinking: (chunk) =>
+    set((s) => ({ orchestratorThinkingContent: s.orchestratorThinkingContent + chunk })),
+  addOrchestratorLog: (entry) =>
+    set((s) => ({ orchestratorCurrentLog: [...s.orchestratorCurrentLog, entry] })),
+  finalizeOrchestratorResponse: (msg) =>
+    set((s) => ({
+      orchestratorMessages: [...s.orchestratorMessages, {
+        ...msg,
+        thinking: s.orchestratorThinkingContent || null,
+        routingReason: s.orchestratorRouting?.reason || null,
+        log: s.orchestratorCurrentLog.length > 0 ? [...s.orchestratorCurrentLog] : undefined,
+      }],
+      orchestratorStreaming: false,
+      orchestratorStreamingContent: '',
+      orchestratorThinkingContent: '',
+      orchestratorCurrentLog: [],
+      orchestratorRouting: null,
+    })),
+  clearOrchestrator: () =>
+    set({
+      orchestratorMessages: [],
+      orchestratorRouting: null,
+      orchestratorStreaming: false,
+      orchestratorStreamingContent: '',
+      orchestratorThinkingContent: '',
+      orchestratorCurrentLog: [],
+    }),
 }))

@@ -4,6 +4,7 @@ module.exports = {
     './src/renderer/index.html',
     './src/renderer/src/**/*.{js,ts,jsx,tsx}'
   ],
+  darkMode: ['selector', '[data-theme="dark"]'],
   theme: {
     extend: {}
   },

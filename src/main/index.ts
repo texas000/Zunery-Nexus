@@ -2,8 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerIpcHandlers } from './ipc-handlers'
-import { startAdkServer, stopAdkServer } from './adk-bridge'
-import { getSettings } from './database'
+import { startAdkServer, stopAdkServer, registerAdkAgent } from './adk-bridge'
+import { getSettings, getAgents } from './database'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -72,10 +72,27 @@ app.whenReady().then(async () => {
   if (settings['adk.enabled'] === 'true') {
     const pythonPath = settings['adk.pythonPath'] || 'python3'
     startAdkServer(pythonPath)
-      .then((result) => {
+      .then(async (result) => {
         if (result.ok) {
           console.log('[Main] ADK server started')
           mainWindow?.webContents.send('adk:status-change', { running: true })
+
+          // Auto-sync all existing agents to ADK server
+          const agents = getAgents()
+          const settings = getSettings()
+          for (const a of agents) {
+            registerAdkAgent({
+              id: a.id,
+              name: a.name,
+              model: a.model,
+              provider: a.provider,
+              system_prompt: a.system_prompt,
+              tools: JSON.parse(a.tools || '[]'),
+              baseUrl: settings['ollama.baseUrl'] || 'http://localhost:11434',
+              apiKey: '',
+            }).catch((e) => console.warn('[Main] Failed to sync agent', a.name, e))
+          }
+          console.log(`[Main] Synced ${agents.length} agents to ADK`)
         } else {
           console.log('[Main] ADK server not available:', result.error)
           mainWindow?.webContents.send('adk:status-change', { running: false, error: result.error })

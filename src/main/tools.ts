@@ -27,8 +27,8 @@ export interface ToolCatalogEntry {
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: 'web_search',
-    label: 'Web Search',
-    description: 'Search DuckDuckGo to find current information, news, and facts',
+    label: 'Google Search',
+    description: 'Search Google to find current information, news, and facts (via Google ADK)',
     icon: 'Search',
   },
 ]
@@ -41,7 +41,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
     function: {
       name: 'web_search',
       description:
-        'Search the web using DuckDuckGo to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information.',
+        'Search Google to get current information, news, facts, or answers. Use this whenever the user asks about recent events, specific facts you are unsure about, or anything that would benefit from up-to-date information.',
       parameters: {
         type: 'object',
         properties: {
@@ -78,8 +78,6 @@ export async function executeToolCall(name: string, args: Record<string, unknown
     return `Tool error: ${e.message || 'unknown'}`
   }
 }
-
-// ─── DuckDuckGo ───────────────────────────────────────────────────────────────
 
 async function duckDuckGoSearch(query: string): Promise<string> {
   if (!query.trim()) return 'No search query provided.'

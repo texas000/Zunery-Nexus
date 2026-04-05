@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Bot, User, Plus, Zap, AlertCircle, Copy, Check, Search, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Send, Bot, User, Plus, AlertCircle, Copy, Check, Search, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useStore, type ToolEvent } from '../store'
 
 function TypingIndicator() {
@@ -62,7 +62,7 @@ function StreamingToolEvents({ events }: { events: ToolEvent[] }) {
               <Check size={11} className="shrink-0" />
             )}
             <Search size={11} className="shrink-0 opacity-70" />
-            <span className="font-medium">Web Search</span>
+            <span className="font-medium">Google Search</span>
             <span className="opacity-60">—</span>
             <span className="font-mono opacity-80 truncate max-w-[240px]">
               {String(ev.args.query ?? '')}
@@ -88,7 +88,7 @@ function ToolCallCard({ tc }: { tc: { toolName: string; args: Record<string, unk
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-700/20 transition-colors text-left"
       >
         <Search size={11} className="text-emerald-400 shrink-0" />
-        <span className="text-zinc-300 font-medium">Web Search</span>
+        <span className="text-zinc-300 font-medium">Google Search</span>
         <span className="text-zinc-600">·</span>
         <span className="font-mono text-emerald-300 truncate flex-1">"{query}"</span>
         {expanded
@@ -257,6 +257,7 @@ export function ChatPage() {
     streamingToolEvents,
     adkRunning,
     useAdk,
+    settings,
     setView,
     setMessages,
     setIsStreaming,
@@ -268,7 +269,6 @@ export function ChatPage() {
     addConversation,
     setActiveConversation,
     updateConversation,
-    setUseAdk,
     appendMessage,
   } = useStore()
 
@@ -278,6 +278,8 @@ export function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const activeAgent = agents.find((a) => a.id === activeAgentId)
+  // Show the globally configured model if set, otherwise fall back to agent's model
+  const displayModel = settings['default.model'] && settings['default.model'].trim() ? settings['default.model'] : (activeAgent?.model || 'default')
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -288,7 +290,7 @@ export function ChatPage() {
     window.api.messages.list(activeConversationId).then(setMessages)
   }, [activeConversationId, setMessages])
 
-  // Register streaming + tool event listeners
+  // Register streaming + tool event + error listeners
   useEffect(() => {
     const removeChunk = window.api.chat.onChunk((chunk) => {
       if (chunk.done) return
@@ -300,8 +302,13 @@ export function ChatPage() {
     const removeToolResult = window.api.chat.onToolResult((ev) => {
       resolveToolCallEvent(ev.toolName, ev.result)
     })
-    return () => { removeChunk(); removeToolCall(); removeToolResult() }
-  }, [appendStreamChunk, addToolCallEvent, resolveToolCallEvent])
+    const removeError = window.api.chat.onError((ev) => {
+      setError(ev.error)
+      setIsStreaming(false)
+      setStreamingMessage(null)
+    })
+    return () => { removeChunk(); removeToolCall(); removeToolResult(); removeError() }
+  }, [appendStreamChunk, addToolCallEvent, resolveToolCallEvent, setIsStreaming, setStreamingMessage])
 
   // Auto-scroll
   useEffect(() => {
@@ -414,24 +421,10 @@ export function ChatPage() {
         <div>
           <h1 className="text-sm font-semibold text-zinc-100">{activeAgent?.name || 'Agent'}</h1>
           <p className="text-xs text-zinc-500">
-            {activeAgent?.model} · {activeAgent?.provider}
+            <span className="font-mono text-indigo-400">{displayModel}</span> · {activeAgent?.provider}
             {activeAgent && (() => { try { const t = JSON.parse(activeAgent.tools || '[]'); return t.length > 0 ? ` · ${t.length} tool${t.length>1?'s':''}` : '' } catch { return '' } })()}
           </p>
         </div>
-        {adkRunning && (
-          <div className="ml-auto flex items-center gap-1.5">
-            <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
-              <div
-                onClick={() => setUseAdk(!useAdk)}
-                className={`relative w-8 h-4 rounded-full transition-colors ${useAdk ? 'bg-emerald-600' : 'bg-zinc-700'}`}
-              >
-                <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${useAdk ? 'translate-x-4' : ''}`} />
-              </div>
-              <Zap size={11} className={useAdk ? 'text-emerald-400' : 'text-zinc-600'} />
-              ADK
-            </label>
-          </div>
-        )}
       </div>
 
       {/* Messages */}

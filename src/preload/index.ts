@@ -40,6 +40,9 @@ const api = {
       useAdk: boolean
     }) => ipcRenderer.invoke('chat:send', params),
 
+    orchestrate: (params: { content: string; useAdk: boolean }) =>
+      ipcRenderer.invoke('chat:orchestrate', params),
+
     onChunk: (callback: (chunk: { id: string; content: string; done: boolean }) => void) => {
       const handler = (_: Electron.IpcRendererEvent, chunk: { id: string; content: string; done: boolean }) =>
         callback(chunk)
@@ -58,12 +61,35 @@ const api = {
       ipcRenderer.on('chat:tool-result', handler)
       return () => ipcRenderer.removeListener('chat:tool-result', handler)
     },
+    onAgentRouting: (callback: (ev: { agentId: string; agentName: string; reason: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, ev: { agentId: string; agentName: string; reason: string }) =>
+        callback(ev)
+      ipcRenderer.on('chat:agent-routing', handler)
+      return () => ipcRenderer.removeListener('chat:agent-routing', handler)
+    },
+    onOrchestratorThinking: (callback: (chunk: { content: string; done: boolean }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, chunk: { content: string; done: boolean }) =>
+        callback(chunk)
+      ipcRenderer.on('chat:orchestrator-thinking', handler)
+      return () => ipcRenderer.removeListener('chat:orchestrator-thinking', handler)
+    },
+    onOrchestratorLog: (callback: (entry: { type: string; label: string; content: string; ts: number; model?: string; agent?: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, entry: { type: string; label: string; content: string; ts: number; model?: string; agent?: string }) =>
+        callback(entry)
+      ipcRenderer.on('chat:orchestrator-log', handler)
+      return () => ipcRenderer.removeListener('chat:orchestrator-log', handler)
+    },
+    onError: (callback: (ev: { id: string; error: string }) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, ev: { id: string; error: string }) =>
+        callback(ev)
+      ipcRenderer.on('chat:error', handler)
+      return () => ipcRenderer.removeListener('chat:error', handler)
+    },
   },
 
   // Models
   models: {
     listOllama: (baseUrl?: string) => ipcRenderer.invoke('models:list-ollama', baseUrl),
-    listLiteLLM: (baseUrl?: string, apiKey?: string) => ipcRenderer.invoke('models:list-litellm', baseUrl, apiKey),
   },
 
   // ADK

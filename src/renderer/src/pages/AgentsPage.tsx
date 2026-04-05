@@ -2,14 +2,14 @@ import React, { useState } from 'react'
 import { Bot, Plus, Edit2, Trash2, ChevronRight, Cpu, Zap, Search, Wrench } from 'lucide-react'
 import { useStore, type Agent } from '../store'
 
-const PROVIDER_LABELS = { ollama: 'Ollama', litellm: 'LiteLLM' }
+const PROVIDER_LABELS = { ollama: 'Ollama' }
 
 // Keep this in sync with src/main/tools.ts TOOL_CATALOG
 const TOOL_CATALOG = [
   {
     name: 'web_search',
-    label: 'Web Search',
-    description: 'Search DuckDuckGo for current information, news, and facts',
+    label: 'Google Search',
+    description: 'Search Google for current information, news, and facts (via ADK)',
     icon: Search,
   },
 ] as const
@@ -20,7 +20,7 @@ interface AgentFormData {
   model: string
   system_prompt: string
   temperature: number
-  provider: 'ollama' | 'litellm'
+  provider: 'ollama'
   tools: string
 }
 
@@ -31,7 +31,7 @@ const DEFAULT_FORM: AgentFormData = {
   system_prompt: '',
   temperature: 0.7,
   provider: 'ollama',
-  tools: '[]',
+  tools: '["web_search"]',
 }
 
 function AgentModal({
@@ -39,19 +39,21 @@ function AgentModal({
   onSave,
   onClose,
   availableModels,
+  defaultModel,
 }: {
   initial?: Agent
   onSave: (data: AgentFormData) => Promise<void>
   onClose: () => void
   availableModels: string[]
+  defaultModel: string
 }) {
   const [form, setForm] = useState<AgentFormData>({
     name: initial?.name || '',
     description: initial?.description || '',
-    model: initial?.model || 'gemma3:latest',
+    model: initial?.model || defaultModel,
     system_prompt: initial?.system_prompt || '',
     temperature: initial?.temperature ?? 0.7,
-    provider: (initial?.provider as 'ollama' | 'litellm') || 'ollama',
+    provider: (initial?.provider as 'ollama') || 'ollama',
     tools: initial?.tools || '[]',
   })
   const [saving, setSaving] = useState(false)
@@ -117,11 +119,10 @@ function AgentModal({
               <label className="text-xs font-medium text-zinc-400">Provider</label>
               <select
                 value={form.provider}
-                onChange={(e) => update('provider', e.target.value as 'ollama' | 'litellm')}
+                onChange={(e) => update('provider', e.target.value as 'ollama')}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 outline-none focus:border-indigo-500/60 transition-colors"
               >
                 <option value="ollama">Ollama</option>
-                <option value="litellm">LiteLLM</option>
               </select>
             </div>
             <div className="space-y-1.5">
@@ -140,7 +141,7 @@ function AgentModal({
                 <input
                   value={form.model}
                   onChange={(e) => update('model', e.target.value)}
-                  placeholder="gemma3:latest"
+                  // placeholder="gemma3:latest"
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-indigo-500/60 transition-colors"
                 />
               )}
@@ -340,21 +341,15 @@ function AgentCard({
 }
 
 export function AgentsPage() {
-  const { agents, setAgents, addAgent, updateAgent, removeAgent, setView, setActiveAgent, adkRunning } = useStore()
+  const { agents, setAgents, addAgent, updateAgent, removeAgent, setView, setActiveAgent, adkRunning, settings } = useStore()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingAgent, setEditingAgent] = useState<Agent | undefined>()
   const [availableModels, setAvailableModels] = useState<string[]>([])
-  const { settings } = useStore()
+  const defaultModel = settings['default.model'] || 'gemma3:latest'
 
   const loadModels = async () => {
     try {
-      const provider = settings['provider'] || 'ollama'
-      let models: string[] = []
-      if (provider === 'ollama') {
-        models = await window.api.models.listOllama()
-      } else {
-        models = await window.api.models.listLiteLLM()
-      }
+      const models = await window.api.models.listOllama()
       setAvailableModels(models)
     } catch {
       setAvailableModels([])
@@ -477,6 +472,7 @@ export function AgentsPage() {
           onSave={handleSave}
           onClose={() => setModalOpen(false)}
           availableModels={availableModels}
+          defaultModel={defaultModel}
         />
       )}
     </div>
