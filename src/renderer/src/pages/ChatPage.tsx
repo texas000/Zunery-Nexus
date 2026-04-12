@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Send, Bot, User, Plus, AlertCircle, Copy, Check, Search, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Send, Bot, User, Plus, AlertCircle, Copy, Check, Search, BookOpen, FileText, FilePlus, FileEdit, FileX, FolderOpen, Wrench, Loader2, ChevronDown, ChevronRight, X, ExternalLink } from 'lucide-react'
 import { useStore, type ToolEvent } from '../store'
 
 function TypingIndicator() {
@@ -38,67 +38,263 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-// Live tool call indicator shown while streaming
+// ─── Tool display metadata ──────────────────────────────────────────────────
+
+const TOOL_META: Record<string, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; argKey: string; color: string }> = {
+  obsidian_search: { label: 'Obsidian Search',  icon: BookOpen,   argKey: 'query',  color: 'violet' },
+  obsidian_read:   { label: 'Obsidian Read',    icon: FileText,   argKey: 'path',   color: 'sky' },
+  obsidian_create: { label: 'Obsidian Create',  icon: FilePlus,   argKey: 'path',   color: 'emerald' },
+  obsidian_update: { label: 'Obsidian Update',  icon: FileEdit,   argKey: 'path',   color: 'amber' },
+  obsidian_delete: { label: 'Obsidian Delete',  icon: FileX,      argKey: 'path',   color: 'red' },
+  obsidian_list:   { label: 'Obsidian List',    icon: FolderOpen,  argKey: 'folder', color: 'indigo' },
+}
+
+function getToolMeta(name: string) {
+  return TOOL_META[name] || { label: name, icon: Wrench, argKey: 'query', color: 'zinc' }
+}
+
+// Live tool call indicators shown while streaming
 function StreamingToolEvents({ events }: { events: ToolEvent[] }) {
   if (events.length === 0) return null
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+  const { settings } = useStore()
+  const vaultPath = settings['obsidian.vaultPath'] || ''
+
   return (
-    <div className="flex items-end gap-3 animate-fade-in">
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-500/30 border border-violet-500/20 flex items-center justify-center shrink-0">
+    <div className="flex items-start gap-3 animate-fade-in">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-500/30 border border-violet-500/20 flex items-center justify-center shrink-0 mt-0.5">
         <Bot size={14} className="text-indigo-300" />
       </div>
-      <div className="space-y-1.5">
-        {events.map((ev, i) => (
-          <div
-            key={i}
-            className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border transition-all ${
-              ev.status === 'calling'
-                ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
-                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-            }`}
-          >
-            {ev.status === 'calling' ? (
-              <Loader2 size={11} className="animate-spin shrink-0" />
-            ) : (
-              <Check size={11} className="shrink-0" />
-            )}
-            <Search size={11} className="shrink-0 opacity-70" />
-            <span className="font-medium">Google Search</span>
-            <span className="opacity-60">—</span>
-            <span className="font-mono opacity-80 truncate max-w-[240px]">
-              {String(ev.args.query ?? '')}
-            </span>
-            {ev.status === 'done' && (
-              <span className="ml-auto opacity-50 shrink-0">done</span>
-            )}
-          </div>
-        ))}
+      <div className="space-y-1.5 flex-1 max-w-[80%]">
+        {events.map((ev, i) => {
+          const meta = getToolMeta(ev.toolName)
+          const Icon = meta.icon
+          const isDone = ev.status === 'done'
+          const isWriteTool = OBSIDIAN_WRITE_TOOLS.has(ev.toolName)
+          const notePath = String((ev.args as Record<string, unknown>).path ?? '')
+          const obsidianUri = isWriteTool && notePath ? buildObsidianUri(vaultPath, notePath) : ''
+
+          // Write tool (create/update/delete) — compact status + link
+          if (isWriteTool) {
+            const actionLabel = !isDone
+              ? (ev.toolName === 'obsidian_create' ? 'Creating note…'
+                : ev.toolName === 'obsidian_update' ? 'Updating note…'
+                : 'Deleting note…')
+              : (ev.toolName === 'obsidian_create' ? 'Note created'
+                : ev.toolName === 'obsidian_update' ? 'Note updated'
+                : 'Note deleted')
+
+            return (
+              <div key={i} className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 overflow-hidden text-xs">
+                <div className="flex flex-col gap-1.5 px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    {isDone
+                      ? <Check size={11} className="text-emerald-400 shrink-0" />
+                      : <Loader2 size={11} className="animate-spin text-amber-300 shrink-0" />
+                    }
+                    <Icon size={11} className={`shrink-0 opacity-70 ${isDone ? 'text-emerald-400' : 'text-amber-300'}`} />
+                    <span className={`font-medium ${isDone ? 'text-emerald-400' : 'text-amber-300'}`}>{actionLabel}</span>
+                    <span className="text-zinc-600">·</span>
+                    <span className="font-mono text-zinc-300 truncate flex-1">{notePath}</span>
+                  </div>
+                  {isDone && obsidianUri && ev.toolName !== 'obsidian_delete' && (
+                    <button
+                      onClick={() => window.api.shell.openExternal(obsidianUri)}
+                      className="flex items-center gap-1.5 ml-5 text-violet-400 hover:text-violet-300 transition-colors w-fit"
+                    >
+                      <ExternalLink size={11} className="shrink-0" />
+                      <span className="font-medium">Open in Obsidian</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          // Read/search/list tool — expandable with raw response
+          const { primary, extra } = formatToolArgs(ev.args as Record<string, unknown>)
+          const isExpanded = expandedIdx === i
+
+          return (
+            <div key={i} className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 overflow-hidden text-xs">
+              <button
+                onClick={() => isDone && setExpandedIdx(isExpanded ? null : i)}
+                className={`w-full flex flex-col gap-1 px-3 py-2 text-left transition-colors ${
+                  isDone ? 'hover:bg-zinc-700/20 cursor-pointer' : 'cursor-default'
+                } ${isDone ? 'text-emerald-400' : 'text-amber-300'}`}
+              >
+                <div className="flex items-center gap-2 w-full">
+                  {isDone
+                    ? <Check size={11} className="shrink-0" />
+                    : <Loader2 size={11} className="animate-spin shrink-0" />
+                  }
+                  <Icon size={11} className="shrink-0 opacity-70" />
+                  <span className="font-medium text-zinc-300">{meta.label}</span>
+                  <span className="text-zinc-600">·</span>
+                  <span className={`font-mono truncate flex-1 ${isDone ? 'text-emerald-300' : 'text-amber-200'}`}>
+                    {primary}
+                  </span>
+                  {isDone && (
+                    isExpanded
+                      ? <ChevronDown size={11} className="text-zinc-500 shrink-0" />
+                      : <ChevronRight size={11} className="text-zinc-500 shrink-0" />
+                  )}
+                </div>
+                {extra.length > 0 && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-5">
+                    {extra.map(({ key, val }) => (
+                      <span key={key} className="text-zinc-500">
+                        <span className="text-zinc-600">{key}:</span>{' '}
+                        <span className="text-zinc-400 font-mono">{val}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+              {isExpanded && ev.result && (
+                <div className="px-3 pb-3 pt-1.5 border-t border-zinc-700/40">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Raw Response</span>
+                    <CopyButton text={ev.result} />
+                  </div>
+                  <div className="max-h-64 overflow-y-auto bg-zinc-900/80 rounded-lg p-2.5 text-zinc-400 leading-relaxed whitespace-pre-wrap selectable text-[11px] font-mono">
+                    {ev.result}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-// Single expandable tool call card
-function ToolCallCard({ tc }: { tc: { toolName: string; args: Record<string, unknown>; result: string } }) {
+// Tools that write to Obsidian — show link instead of raw content
+const OBSIDIAN_WRITE_TOOLS = new Set(['obsidian_create', 'obsidian_update', 'obsidian_delete'])
+
+/** Build an obsidian:// deep link from vault path + note path */
+function buildObsidianUri(vaultPath: string, notePath: string): string {
+  // Extract vault name from path (last directory segment)
+  const segments = vaultPath.replace(/\/+$/, '').split('/')
+  const vaultName = segments[segments.length - 1] || 'Ryan'
+  // Remove .md extension for Obsidian URI
+  const file = notePath.replace(/\.md$/, '')
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(file)}`
+}
+
+// Format tool args for display — show key=value pairs
+function formatToolArgs(args: Record<string, unknown>): { primary: string; extra: Array<{ key: string; val: string }> } {
+  const entries = Object.entries(args).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  if (entries.length === 0) return { primary: '', extra: [] }
+
+  // First entry is the primary display value
+  const [, firstVal] = entries[0]
+  const primary = String(firstVal)
+
+  // Remaining entries shown as extra context
+  const extra = entries.slice(1).map(([key, val]) => {
+    const s = String(val)
+    return { key, val: s.length > 80 ? s.slice(0, 80) + '…' : s }
+  })
+
+  return { primary, extra }
+}
+
+// Single expandable tool call card (for persisted messages)
+function ToolCallCard({ tc, vaultPath }: { tc: { toolName: string; args: Record<string, unknown>; result: string }; vaultPath: string }) {
   const [expanded, setExpanded] = useState(false)
-  const query = String(tc.args.query ?? tc.args.input ?? Object.values(tc.args)[0] ?? '')
+  const meta = getToolMeta(tc.toolName)
+  const Icon = meta.icon
+  const isWriteTool = OBSIDIAN_WRITE_TOOLS.has(tc.toolName)
+  const notePath = String(tc.args.path ?? '')
+  const obsidianUri = isWriteTool && notePath ? buildObsidianUri(vaultPath, notePath) : ''
+
+  // For write tools: show compact card with status + open link
+  if (isWriteTool) {
+    const actionLabel = tc.toolName === 'obsidian_create' ? 'Note created'
+      : tc.toolName === 'obsidian_update' ? 'Note updated'
+      : 'Note deleted'
+
+    return (
+      <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 overflow-hidden text-xs">
+        <div className="flex flex-col gap-1.5 px-3 py-2.5">
+          <div className="flex items-center gap-2">
+            <Icon size={12} className="text-emerald-400 shrink-0" />
+            <span className="text-emerald-400 font-medium">{actionLabel}</span>
+            <span className="text-zinc-600">·</span>
+            <span className="font-mono text-zinc-300 truncate flex-1">{notePath}</span>
+          </div>
+          {obsidianUri && tc.toolName !== 'obsidian_delete' && (
+            <button
+              onClick={() => window.api.shell.openExternal(obsidianUri)}
+              className="flex items-center gap-1.5 ml-5 text-violet-400 hover:text-violet-300 transition-colors w-fit"
+            >
+              <ExternalLink size={11} className="shrink-0" />
+              <span className="font-medium">Open in Obsidian</span>
+            </button>
+          )}
+          {tc.result && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1 ml-5 text-zinc-500 hover:text-zinc-400 transition-colors w-fit"
+            >
+              {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              <span className="text-[10px]">raw response</span>
+            </button>
+          )}
+        </div>
+        {expanded && tc.result && (
+          <div className="px-3 pb-3 pt-1.5 border-t border-zinc-700/40">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Raw Response</span>
+              <CopyButton text={tc.result} />
+            </div>
+            <div className="max-h-64 overflow-y-auto bg-zinc-900/80 rounded-lg p-2.5 text-zinc-400 leading-relaxed whitespace-pre-wrap selectable text-[11px] font-mono">
+              {tc.result}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // For read/search/list tools: show full expandable card
+  const { primary, extra } = formatToolArgs(tc.args)
   return (
     <div className="rounded-xl border border-zinc-700/40 bg-zinc-800/40 overflow-hidden text-xs">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-700/20 transition-colors text-left"
+        className="w-full flex flex-col gap-1 px-3 py-2 hover:bg-zinc-700/20 transition-colors text-left"
       >
-        <Search size={11} className="text-emerald-400 shrink-0" />
-        <span className="text-zinc-300 font-medium">Google Search</span>
-        <span className="text-zinc-600">·</span>
-        <span className="font-mono text-emerald-300 truncate flex-1">"{query}"</span>
-        {expanded
-          ? <ChevronDown size={11} className="text-zinc-500 shrink-0" />
-          : <ChevronRight size={11} className="text-zinc-500 shrink-0" />}
+        <div className="flex items-center gap-2 w-full">
+          <Icon size={11} className="text-emerald-400 shrink-0" />
+          <span className="text-zinc-300 font-medium">{meta.label}</span>
+          <span className="text-zinc-600">·</span>
+          <span className="font-mono text-emerald-300 truncate flex-1">{primary}</span>
+          {expanded
+            ? <ChevronDown size={11} className="text-zinc-500 shrink-0" />
+            : <ChevronRight size={11} className="text-zinc-500 shrink-0" />}
+        </div>
+        {extra.length > 0 && (
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-5">
+            {extra.map(({ key, val }) => (
+              <span key={key} className="text-zinc-500">
+                <span className="text-zinc-600">{key}:</span>{' '}
+                <span className="text-zinc-400 font-mono">{val}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </button>
       {expanded && (
         <div className="px-3 pb-3 pt-1.5 border-t border-zinc-700/40">
-          <div className="max-h-56 overflow-y-auto text-zinc-400 leading-relaxed whitespace-pre-wrap selectable text-[11px]">
-            {tc.result}
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Raw Response</span>
+            <CopyButton text={tc.result} />
+          </div>
+          <div className="max-h-64 overflow-y-auto bg-zinc-900/80 rounded-lg p-2.5 text-zinc-400 leading-relaxed whitespace-pre-wrap selectable text-[11px] font-mono">
+            {tc.result || '(no result)'}
           </div>
         </div>
       )}
@@ -107,7 +303,7 @@ function ToolCallCard({ tc }: { tc: { toolName: string; args: Record<string, unk
 }
 
 // Tool calls stored in message metadata, shown as individual expandable cards
-function MessageToolCalls({ metadata }: { metadata: string }) {
+function MessageToolCalls({ metadata, vaultPath }: { metadata: string; vaultPath: string }) {
   let toolCalls: Array<{ toolName: string; args: Record<string, unknown>; result: string }> = []
   try {
     const parsed = JSON.parse(metadata)
@@ -120,7 +316,7 @@ function MessageToolCalls({ metadata }: { metadata: string }) {
   return (
     <div className="mt-2 space-y-1.5">
       {toolCalls.map((tc, i) => (
-        <ToolCallCard key={i} tc={tc} />
+        <ToolCallCard key={i} tc={tc} vaultPath={vaultPath} />
       ))}
     </div>
   )
@@ -155,6 +351,8 @@ function MessageBubble({
   metadata?: string
   streaming?: boolean
 }) {
+  const { settings } = useStore()
+  const vaultPath = settings['obsidian.vaultPath'] || ''
   const isUser = role === 'user'
 
   if (isUser) {
@@ -176,11 +374,14 @@ function MessageBubble({
   }
 
   return (
-    <div className="flex items-end gap-3 animate-fade-in">
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-500/30 border border-violet-500/20 flex items-center justify-center shrink-0">
+    <div className="flex items-start gap-3 animate-fade-in">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500/30 to-indigo-500/30 border border-violet-500/20 flex items-center justify-center shrink-0 mt-0.5">
         <Bot size={14} className="text-indigo-300" />
       </div>
-      <div className="max-w-[80%] group">
+      <div className="max-w-[80%] group space-y-2">
+        {/* Tool calls shown above the response */}
+        {!streaming && <MessageToolCalls metadata={metadata} vaultPath={vaultPath} />}
+
         <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl rounded-bl-sm px-4 py-3 text-sm text-zinc-200 selectable">
           <div className="prose-chat">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
@@ -190,9 +391,8 @@ function MessageBubble({
           )}
         </div>
         {!streaming && (
-          <div className="px-1 mt-1">
-            <MessageToolCalls metadata={metadata} />
-            <div className="flex items-center gap-1 mt-1">
+          <div className="px-1">
+            <div className="flex items-center gap-1">
               <CopyButton text={content} />
             </div>
           </div>

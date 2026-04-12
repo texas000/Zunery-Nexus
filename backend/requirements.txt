@@ -1,0 +1,16 @@
+# Zunery Nexus FastAPI Backend
+# Core
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.0.0
+
+# Google ADK
+google-adk>=0.1.0
+
+# Web Search Tool
+playwright>=1.40.0
+playwright-stealth>=1.0.0
+beautifulsoup4>=4.12.0
+
+# PyInstaller (build only)
+# pyinstaller>=6.0.0

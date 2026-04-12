@@ -39,7 +39,7 @@ const LOG_META: Record<string, { color: string; bg: string }> = {
   'tool-call':         { color: 'text-yellow-400',  bg: 'bg-yellow-500/15' },
   'tool-result':       { color: 'text-green-400',   bg: 'bg-green-500/15' },
   'obsidian-prefetch': { color: 'text-violet-400',  bg: 'bg-violet-500/15' },
-  'web-fallback':      { color: 'text-amber-400',   bg: 'bg-amber-500/15' },
+  'keyword-extract':   { color: 'text-amber-400',   bg: 'bg-amber-500/15' },
   info:                { color: 'text-zinc-400',    bg: 'bg-zinc-500/10' },
   error:               { color: 'text-red-400',     bg: 'bg-red-500/15' },
 }
@@ -175,7 +175,6 @@ function AgentBadge({ name }: { name: string }) {
 // ─── Tool display metadata ───────────────────────────────────────────────────
 
 const TOOL_DISPLAY: Record<string, { label: string; icon: React.ComponentType<{ size?: number; className?: string }>; argKey: string }> = {
-  web_search:      { label: 'Google Search',    icon: Search,     argKey: 'query' },
   obsidian_search: { label: 'Obsidian Search',  icon: BookOpen,   argKey: 'query' },
   obsidian_read:   { label: 'Obsidian Read',    icon: FileText,   argKey: 'path' },
   obsidian_create: { label: 'Obsidian Create',  icon: FilePlus,   argKey: 'path' },

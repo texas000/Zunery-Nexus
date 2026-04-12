@@ -61,7 +61,7 @@ const defaults: Record<string, string> = {
   'adk.enabled': 'true',
   'adk.pythonPath': process.platform === 'win32' ? 'python' : 'python3',
   'theme': 'dark',
-  'obsidian.enabled': 'false',
+  'obsidian.enabled': 'true',
   'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
 }
 const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)')

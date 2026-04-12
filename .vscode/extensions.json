@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "ms-python.python",
+    "ms-python.debugpy",
+    "ms-vscode-remote.remote-wsl",
+    "vadimcn.vscode-lldb",
+    "chromedevtools.vscode-chrome-debug"
+  ]
+}

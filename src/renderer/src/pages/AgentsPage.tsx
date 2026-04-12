@@ -40,7 +40,7 @@ const DEFAULT_FORM: AgentFormData = {
   system_prompt: '',
   temperature: 0.7,
   provider: 'ollama',
-  tools: '["web_search"]',
+  tools: '["obsidian_search","obsidian_read","obsidian_create","obsidian_update","obsidian_delete","obsidian_list"]',
 }
 
 function AgentModal({

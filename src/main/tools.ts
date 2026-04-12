@@ -29,82 +29,52 @@ export interface ToolCatalogEntry {
 
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
-    name: 'web_search',
-    label: 'Google Search',
-    description: 'Search Google to find current information, news, and facts (via Google ADK)',
-    icon: 'Search',
-  },
-  {
     name: 'obsidian_search',
     label: 'Obsidian Search',
     description: 'Search notes in your Obsidian vault for relevant knowledge',
     icon: 'BookOpen',
-    enabledBySetting: 'obsidian.enabled',
   },
   {
     name: 'obsidian_read',
     label: 'Obsidian Read',
     description: 'Read a specific note from your Obsidian vault',
     icon: 'FileText',
-    enabledBySetting: 'obsidian.enabled',
   },
   {
     name: 'obsidian_create',
     label: 'Obsidian Create',
     description: 'Create a new note in your Obsidian vault with auto-categorization',
     icon: 'FilePlus',
-    enabledBySetting: 'obsidian.enabled',
   },
   {
     name: 'obsidian_update',
     label: 'Obsidian Update',
     description: 'Update or append to an existing note in your Obsidian vault',
     icon: 'FileEdit',
-    enabledBySetting: 'obsidian.enabled',
   },
   {
     name: 'obsidian_delete',
     label: 'Obsidian Delete',
     description: 'Delete a note from your Obsidian vault',
     icon: 'FileX',
-    enabledBySetting: 'obsidian.enabled',
   },
   {
     name: 'obsidian_list',
     label: 'Obsidian List',
     description: 'List notes and folders in your Obsidian vault',
     icon: 'FolderOpen',
-    enabledBySetting: 'obsidian.enabled',
   },
 ]
 
 // ─── Tool definitions (sent to the LLM) ──────────────────────────────────────
 
 export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
-  web_search: {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description:
-        'Search the INTERNET (Google) for external, public information, news, current events, or facts. Use this for web searches only. Do NOT use this when the user asks about their own notes, documents, or Obsidian vault — use obsidian_search instead.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'The search query. Be specific and concise for better results.',
-          },
-        },
-        required: ['query'],
-      },
-    },
-  },
   obsidian_search: {
     type: 'function',
     function: {
       name: 'obsidian_search',
       description:
-        'Search the user\'s LOCAL Obsidian vault for personal notes, documents, meeting notes, project docs, ideas, references, and stored knowledge. This is NOT a web search — it searches local Markdown files on the user\'s computer. Use this tool (NOT web_search) when the user mentions: notes, vault, obsidian, my documents, saved information, 노트, 메모, 기록, 내 문서. Also use this when the user says "search notes", "find my notes", "look up in my vault", etc.',
+        'Search the user\'s Obsidian vault for personal notes, documents, meeting notes, project docs, ideas, references, and stored knowledge. Searches local Markdown files. Use when the user mentions: notes, vault, obsidian, my documents, saved information, 노트, 메모, 기록, 내 문서. Also use when the user says "search notes", "find my notes", "look up in my vault", etc.',
       parameters: {
         type: 'object',
         properties: {
@@ -236,30 +206,14 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   },
 }
 
-/** Get active tool definitions, filtering by settings (e.g. obsidian.enabled) */
+/** Get all tool definitions (all tools are always available). */
 export function getActiveToolDefinitions(): Record<string, ToolDefinition> {
-  const settings = db.getSettings()
-  const active: Record<string, ToolDefinition> = {}
-
-  for (const [name, def] of Object.entries(TOOL_DEFINITIONS)) {
-    const catalogEntry = TOOL_CATALOG.find((c) => c.name === name)
-    if (catalogEntry?.enabledBySetting) {
-      if (settings[catalogEntry.enabledBySetting] !== 'true') continue
-    }
-    active[name] = def
-  }
-  return active
+  return { ...TOOL_DEFINITIONS }
 }
 
-/** Get active tool catalog entries, filtering by settings */
+/** Get all tool catalog entries (all tools are always available). */
 export function getActiveToolCatalog(): ToolCatalogEntry[] {
-  const settings = db.getSettings()
-  return TOOL_CATALOG.filter((entry) => {
-    if (entry.enabledBySetting) {
-      return settings[entry.enabledBySetting] === 'true'
-    }
-    return true
-  })
+  return [...TOOL_CATALOG]
 }
 
 // ─── Execution ────────────────────────────────────────────────────────────────
@@ -269,9 +223,6 @@ export async function executeToolCall(name: string, args: Record<string, unknown
     console.log('[TOOLS] executeToolCall', { name, args })
     let result: string
     switch (name) {
-      case 'web_search':
-        result = await adkServerSearch(String(args.query ?? ''))
-        break
       case 'obsidian_search':
         result = await adkObsidianCall('search', args)
         break
@@ -325,120 +276,3 @@ async function adkObsidianCall(action: string, args: Record<string, unknown>): P
   }
 }
 
-// ─── Web Search via ADK Server ──────────────────────────────────────────────
-
-async function adkServerSearch(query: string): Promise<string> {
-  if (!query.trim()) return 'No search query provided.'
-
-  try {
-    const res = await axios.post(
-      'http://127.0.0.1:7891/tools/search',
-      { query, max_results: 5 },
-      { timeout: 45000, headers: { 'Content-Type': 'application/json' } },
-    )
-    const d = res.data as {
-      query?: string
-      results?: Array<{ position: number; title: string; url: string; snippet: string }>
-      total_results?: number
-      error?: string | null
-    }
-
-    if (d.error) return `Search error: ${d.error}`
-    if (!d.results || d.results.length === 0) return `No results found for "${query}".`
-
-    const lines: string[] = [`Search results for "${query}":`]
-    for (const r of d.results) {
-      lines.push(`\n${r.position}. ${r.title}`)
-      lines.push(`   URL: ${r.url}`)
-      if (r.snippet) lines.push(`   ${r.snippet}`)
-    }
-    return lines.join('\n')
-  } catch {
-    // ADK server unreachable — fall back to DuckDuckGo
-    return duckDuckGoSearch(query)
-  }
-}
-
-async function duckDuckGoSearch(query: string): Promise<string> {
-  if (!query.trim()) return 'No search query provided.'
-
-  const parts: string[] = []
-
-  // 1. Instant Answer API (structured data)
-  try {
-    const ia = await axios.get('https://api.duckduckgo.com/', {
-      params: { q: query, format: 'json', no_redirect: 1, no_html: 1, skip_disambig: 1 },
-      timeout: 8000,
-      headers: { 'User-Agent': 'ZuneryNexus/1.0' },
-    })
-    const d = ia.data
-
-    if (d.Answer) parts.push(`Direct answer: ${d.Answer}`)
-    if (d.AbstractText) {
-      parts.push(`Summary: ${d.AbstractText}`)
-      if (d.AbstractURL) parts.push(`Source: ${d.AbstractURL}`)
-    }
-    if (d.Definition) parts.push(`Definition: ${d.Definition}`)
-
-    const related: Array<{ Text: string; FirstURL: string }> = (d.RelatedTopics || [])
-      .filter((t: Record<string, string>) => t.Text && t.FirstURL)
-      .slice(0, 5)
-
-    if (related.length > 0 && !parts.length) {
-      // Only use related topics if we have nothing else yet
-      parts.push('Related results:')
-      related.forEach((t) => parts.push(`• ${t.Text}\n  ${t.FirstURL}`))
-    }
-  } catch {
-    // continue to HTML fallback
-  }
-
-  // 2. HTML search for real web results
-  try {
-    const html = await axios.get('https://html.duckduckgo.com/html/', {
-      params: { q: query },
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-        Accept: 'text/html',
-      },
-      timeout: 10000,
-    })
-
-    const body: string = html.data
-    const webResults: string[] = []
-
-    // Extract result blocks: title + snippet
-    const blockRe = /<div class="result[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g
-    const titleRe = /<a[^>]+class="result__a"[^>]*>([\s\S]*?)<\/a>/
-    const snippetRe = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/
-
-    let match: RegExpExecArray | null
-    let count = 0
-    // eslint-disable-next-line no-cond-assign
-    while ((match = blockRe.exec(body)) !== null && count < 6) {
-      const block = match[1]
-      const titleMatch = titleRe.exec(block)
-      const snippetMatch = snippetRe.exec(block)
-      if (titleMatch) {
-        const title = titleMatch[1].replace(/<[^>]+>/g, '').trim()
-        const snippet = snippetMatch ? snippetMatch[1].replace(/<[^>]+>/g, '').trim() : ''
-        if (title) {
-          webResults.push(`• ${title}${snippet ? `\n  ${snippet}` : ''}`)
-          count++
-        }
-      }
-    }
-
-    if (webResults.length > 0) {
-      parts.push('\nWeb results:')
-      parts.push(...webResults)
-    }
-  } catch {
-    // HTML fallback failed; that's ok
-  }
-
-  return parts.length > 0
-    ? parts.join('\n')
-    : `No results found for "${query}". Try rephrasing your query.`
-}

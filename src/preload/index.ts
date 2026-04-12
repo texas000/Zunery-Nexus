@@ -97,6 +97,11 @@ const api = {
     catalog: () => ipcRenderer.invoke('tools:catalog') as Promise<Array<{ name: string; label: string; description: string; icon: string }>>,
   },
 
+  // Shell
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
+  },
+
   // ADK
   adk: {
     status: () => ipcRenderer.invoke('adk:status'),

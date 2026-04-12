@@ -67,17 +67,17 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Start ADK server in background
+  // Start FastAPI backend server
   const settings = getSettings()
   if (settings['adk.enabled'] === 'true') {
     const pythonPath = settings['adk.pythonPath'] || (process.platform === 'win32' ? 'python' : 'python3')
     startAdkServer(pythonPath)
       .then(async (result) => {
         if (result.ok) {
-          console.log('[Main] ADK server started')
+          console.log('[Main] FastAPI backend started')
           mainWindow?.webContents.send('adk:status-change', { running: true })
 
-          // Auto-sync all existing agents to ADK server
+          // Auto-sync all existing agents to backend
           const agents = getAgents()
           const settings = getSettings()
           for (const a of agents) {
@@ -92,9 +92,9 @@ app.whenReady().then(async () => {
               apiKey: '',
             }).catch((e) => console.warn('[Main] Failed to sync agent', a.name, e))
           }
-          console.log(`[Main] Synced ${agents.length} agents to ADK`)
+          console.log(`[Main] Synced ${agents.length} agents to backend`)
         } else {
-          console.log('[Main] ADK server not available:', result.error)
+          console.log('[Main] Backend server not available:', result.error)
           mainWindow?.webContents.send('adk:status-change', { running: false, error: result.error })
         }
       })

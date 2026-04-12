@@ -12,15 +12,17 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
-    "dev": "electron-vite dev",
+    "dev": "concurrently -k -n backend,electron -c blue,green \"npm run dev:backend\" \"npm run dev:electron\"",
+    "dev:backend": "python3 -m backend --port 7891",
+    "dev:electron": "electron-vite dev",
     "build": "electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "dist": "npm run build && electron-builder --publish never"
-    ,"icons:generate": "bash scripts/generate-icons.sh"
+    "dist": "npm run build && electron-builder --publish never",
+    "icons:generate": "bash scripts/generate-icons.sh"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
@@ -43,6 +45,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.24",
+    "concurrently": "^9.2.1",
     "electron": "^31.0.2",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.3.0",
@@ -55,8 +58,8 @@
     "tailwindcss": "^4.2.0",
     "typescript": "^5.5.2",
     "vite": "^5.3.1"
-  }
-  ,"build": {
+  },
+  "build": {
     "appId": "com.zunery.nexus",
     "productName": "Zunery Nexus",
     "directories": {
@@ -70,16 +73,25 @@
       "resources/**"
     ],
     "mac": {
-      "target": ["dmg","zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities",
       "icon": "build/icons/icon.icns"
     },
     "win": {
-      "target": ["nsis","zip"],
+      "target": [
+        "nsis",
+        "zip"
+      ],
       "icon": "build/icons/icon.ico"
     },
     "linux": {
-      "target": ["AppImage","deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "build/icons"
     }
   }

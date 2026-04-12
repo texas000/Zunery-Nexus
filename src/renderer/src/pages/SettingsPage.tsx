@@ -71,7 +71,7 @@ export function SettingsPage() {
     'adk.enabled': 'true',
     'adk.pythonPath': navigator.userAgent.includes('Windows') ? 'python' : 'python3',
     'theme': 'dark',
-    'obsidian.enabled': 'false',
+    'obsidian.enabled': 'true',
     'obsidian.vaultPath': '/Users/ryan/Library/Mobile Documents/iCloud~md~obsidian/Documents/Ryan/',
   })
 
@@ -265,7 +265,22 @@ export function SettingsPage() {
               <p className="text-xs text-zinc-500 mt-0.5">Enables search, read, create, update, and delete tools for all agents</p>
             </div>
             <div
-              onClick={() => update('obsidian.enabled', form['obsidian.enabled'] === 'true' ? 'false' : 'true')}
+              onClick={async () => {
+                const next = form['obsidian.enabled'] === 'true' ? 'false' : 'true'
+                update('obsidian.enabled', next)
+                // Persist immediately so the toggle takes effect without clicking Save
+                await window.api.settings.setMany({ ...form, 'obsidian.enabled': next })
+                setSettings({ ...settings, 'obsidian.enabled': next })
+                if (next === 'true' && form['obsidian.vaultPath']) {
+                  try {
+                    await fetch('http://127.0.0.1:7891/tools/obsidian/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ vault_path: form['obsidian.vaultPath'] }),
+                    })
+                  } catch { /* ADK server might not be running */ }
+                }
+              }}
               className={`relative w-10 h-5 rounded-full cursor-pointer transition-colors ${form['obsidian.enabled'] === 'true' ? 'bg-violet-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}
             >
               <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${form['obsidian.enabled'] === 'true' ? 'translate-x-5' : ''}`} />

@@ -168,15 +168,25 @@ export const useStore = create<AppState>((set) => ({
   appendStreamChunk: (chunk) => set((s) => ({ streamingContent: s.streamingContent + chunk })),
 
   addToolCallEvent: (toolName, args) =>
-    set((s) => ({
-      streamingToolEvents: [...s.streamingToolEvents, { toolName, args, status: 'calling' }],
-    })),
+    set((s) => {
+      // Only accept events while actively streaming
+      if (!s.isStreaming) return s
+      return { streamingToolEvents: [...s.streamingToolEvents, { toolName, args, status: 'calling' }] }
+    }),
   resolveToolCallEvent: (toolName, result) =>
-    set((s) => ({
-      streamingToolEvents: s.streamingToolEvents.map((ev) =>
-        ev.toolName === toolName && ev.status === 'calling' ? { ...ev, result, status: 'done' } : ev
-      ),
-    })),
+    set((s) => {
+      if (!s.isStreaming) return s
+      // Match the LAST calling event for this tool (handles repeated tool calls)
+      let matched = false
+      const updated = [...s.streamingToolEvents].reverse().map((ev) => {
+        if (!matched && ev.toolName === toolName && ev.status === 'calling') {
+          matched = true
+          return { ...ev, result, status: 'done' as const }
+        }
+        return ev
+      }).reverse()
+      return { streamingToolEvents: updated }
+    }),
 
   finalizeStreaming: (msg) =>
     set((s) => ({
